@@ -1,0 +1,354 @@
+{% extends 'base.html' %}
+
+{% block title %}Результаты Обработки - Анализатор Резюме{% endblock %}
+
+{% block content %}
+<h1 class="mb-3">Обработка Резюме</h1>
+
+{# Сообщение о статусе (Bootstrap Alert) #}
+<div id="status-message" class="alert alert-info shadow-sm" role="alert">
+   <div class="d-flex align-items-center">
+      <span class="processing-spinner"></span>
+      <span id="status-text" class="ms-2">Инициализация обработки пачки... (ID: <span class="fw-bold">{{ batch_id
+            }}</span>)</span>
+      <span id="progress-counter" class="ms-auto"></span> {# Место для счетчика N/M #}
+   </div>
+   <div class="progress mt-2" id="progress-bar-container" style="height: 1.5rem; display: none;">
+      <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated text-white fw-bold"
+         role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+         0%
+      </div>
+   </div>
+</div>
+
+{% if job_description %}
+<div class="card mb-4 shadow-sm">
+   <div class="card-header">
+      <i class="bi bi-file-text me-1"></i>Описание вакансии (для которой проводился анализ)
+   </div>
+   <div class="card-body">
+      {# Используем
+      <pre> для сохранения форматирования и стилизуем #}
+            <pre style="white-space: pre-wrap; font-size: 0.9em; background-color: #f8f9fa; padding: 10px; border-radius: 4px;">{{ job_description }}</pre>
+   </div>
+</div>
+{% endif %}
+
+{# Место для отображения лучшего кандидата #}
+<div id="best-candidate-placeholder" class="mb-4">
+   {# Начальное состояние или сообщение об ожидании #}
+   <div class="text-center text-muted p-3">
+      <div class="spinner-border spinner-border-sm text-primary" role="status">
+         <span class="visually-hidden">Loading...</span>
+      </div>
+      <span class="ms-2">Ожидание результатов для определения лучшего кандидата...</span>
+   </div>
+</div>
+
+{# Место для отображения списка остальных результатов #}
+<div id="results-list-container">
+   <h2 class="h4 mb-3" id="results-list-header" style="display: none;">
+      <i class="bi bi-people me-1"></i>Обработанные резюме (<span id="results-count">0</span> шт.):
+   </h2>
+   <div id="results-list-placeholder" class="results-section">
+      {# Начальное состояние или сообщение об ожидании #}
+      <p class="text-center text-muted" id="results-waiting-message"><i>Ожидание первых результатов обработки...</i></p>
+   </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+   //  JavaScript для опроса и обновления UI 
+   const batchId = "{{ batch_id }}";
+   const urlParams = new URLSearchParams(window.location.search);
+   const totalTasks = parseInt(urlParams.get('total_tasks') || '{{ total_tasks | default(0) }}', 10);
+
+   let processedCount = 0;
+   let pollInterval;
+   let pollingActive = true;
+
+   // Элементы UI
+   const statusMessageEl = document.getElementById('status-message');
+   const statusTextEl = document.getElementById('status-text');
+   const progressCounterEl = document.getElementById('progress-counter');
+   const progressBarContainer = document.getElementById('progress-bar-container');
+   const progressBar = document.getElementById('progress-bar');
+   const bestCandidateEl = document.getElementById('best-candidate-placeholder');
+   const resultsListContainer = document.getElementById('results-list-container');
+   const resultsListHeader = document.getElementById('results-list-header');
+   const resultsCountEl = document.getElementById('results-count');
+   const resultsListEl = document.getElementById('results-list-placeholder');
+   const resultsWaitingMessage = document.getElementById('results-waiting-message');
+   const spinnerEl = statusMessageEl.querySelector('.processing-spinner');
+
+   // Функция экранирования HTML (для безопасности при вставке текста из БД)
+   function htmlEscape(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+         .replace(/&/g, '&amp;')
+         .replace(/</g, '&lt;')
+         .replace(/>/g, '&gt;')
+         .replace(/"/g, '&quot;')
+         .replace(/'/g, '&#39;');
+   }
+
+   // Функция обновления UI на основе данных с сервера
+   function updateUI(data) {
+      processedCount = data.results ? data.results.length : 0;
+      const isComplete = (data.status === 'COMPLETE');
+      const hasError = (data.status === 'ERROR');
+
+      //  Обновление статус-бара 
+      let statusText = `Обработка пачки... (ID: ${batchId})`;
+      statusMessageEl.className = 'alert shadow-sm';
+      if (spinnerEl) spinnerEl.style.display = 'inline-block';
+
+      if (hasError) {
+         statusText = `Ошибка обработки пачки: ${htmlEscape(data.message || 'Неизвестная ошибка сервера')}`;
+         statusMessageEl.classList.add('alert-danger');
+         if (spinnerEl) spinnerEl.style.display = 'none';
+         pollingActive = false;
+      } else if (isComplete) {
+         statusText = `Обработка завершена! (ID: ${batchId})`;
+         statusMessageEl.classList.add('alert-success');
+         if (spinnerEl) spinnerEl.style.display = 'none';
+         pollingActive = false;
+      } else {
+         statusMessageEl.classList.add('alert-info');
+         statusText = `Идет обработка... (ID: ${batchId})`;
+      }
+      statusTextEl.textContent = statusText;
+
+      //  Обновление прогресс-бара и счетчика 
+      if (totalTasks > 0 && !hasError) {
+         const progressPercent = Math.min(100, Math.round((processedCount / totalTasks) * 100));
+         progressBarContainer.style.display = 'flex';
+         progressBar.style.width = `${progressPercent}%`;
+         progressBar.setAttribute('aria-valuenow', progressPercent);
+         progressBar.textContent = `${progressPercent}%`;
+         progressCounterEl.textContent = `(${processedCount}/${totalTasks})`;
+         if (isComplete) {
+            progressBar.classList.remove('progress-bar-animated', 'bg-info');
+            progressBar.classList.add('bg-success');
+         } else {
+            progressBar.classList.remove('bg-success');
+            progressBar.classList.add('progress-bar-animated', 'bg-info');
+         }
+      } else {
+         progressBarContainer.style.display = 'none';
+         progressCounterEl.textContent = `(${processedCount} обработано)`;
+      }
+
+
+      //  Отображение лучшего кандидата 
+      bestCandidateEl.innerHTML = ''; // Очищаем предыдущее состояние
+      if (data.best_candidate) {
+         const bc = data.best_candidate;
+         let downloadLinkHTML = '';
+         if (bc.stored_filename) {
+            const downloadUrl = `/download_resume/${encodeURIComponent(bc.stored_filename)}`;
+            downloadLinkHTML = `<a href="${downloadUrl}" download="${htmlEscape(bc.original_filename)}" class="btn btn-sm btn-outline-secondary download-link" title="Скачать резюме ${htmlEscape(bc.original_filename)}"><i class="bi bi-download"></i> Скачать</a>`;
+         }
+         const isAIErrorBC = bc.analysis_text && (bc.analysis_text.startsWith("ОШИБКА AI:") || bc.analysis_text.startsWith("КРИТИЧЕСКАЯ ОШИБКА"));
+
+         bestCandidateEl.innerHTML = `
+                    <div class="card best-candidate-section mb-4 shadow-sm border-success">
+                        <div class="card-header bg-success text-white">
+                           <h2 class="h4 mb-0"><i class="bi bi-trophy-fill me-2"></i>Лучший кандидат</h2>
+                        </div>
+                        <div class="card-body">
+                             <h5 class="card-title mb-1">
+                                ${htmlEscape(bc.candidate_name || 'Имя не найдено')}
+                                ${bc.score !== null ? `<span class="score-box">${bc.score}/10</span>` : '<span class="no-score">(Нет оценки)</span>'}
+                             </h5>
+                             <p class="card-subtitle text-muted mb-2">
+                                 <strong>Файл:</strong> ${htmlEscape(bc.original_filename)} ${downloadLinkHTML}
+                             </p>
+                             <hr>
+                             <p class="card-text mb-1"><strong>Результат анализа:</strong></p>
+                             ${isAIErrorBC
+               ? `<div class="error-message">${htmlEscape(bc.analysis_text)}</div>` // Показать ошибку, если она есть
+               : `
+                                    {# Отображаем краткий итог и кнопку "Развернуть" #}
+                                    <div class="summary-output">
+                                        ${htmlEscape(bc.summary_conclusion || 'Краткий итог не доступен.')} {# Используем summary_conclusion #}
+                                        ${bc.analysis_html ? ` {# Показываем кнопку только если полный анализ есть #}
+                                            <button class="btn btn-link btn-sm p-0 ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAnalysisBC${bc.id}" aria-expanded="false" aria-controls="collapseAnalysisBC${bc.id}">
+                                                Развернуть
+                                            </button>
+                                        ` : ''}
+                                    </div>
+
+                                    {# Контейнер для полного анализа #}
+                                    ${bc.analysis_html ? ` {# Создаем скрытый блок только если полный анализ есть #}
+                                        <div class="collapse mt-2" id="collapseAnalysisBC${bc.id}"> {# Уникальный ID для сворачивания #}
+                                            <div class="card card-body p-2">
+                                                <div class="analysis-html-output">
+                                                    ${bc.analysis_html} {# Полный HTML анализа #}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ` : `<p class="text-muted">Нет данных полного анализа.</p>`} {# Сообщение, если полного анализа нет #}
+                                `
+            }
+                         </div>
+                    </div>`;
+      } else if (processedCount > 0 && !isComplete && !hasError) {
+         bestCandidateEl.innerHTML = `<div class="alert alert-light text-center shadow-sm"><i>Анализ продолжается, определение лучшего кандидата...</i></div>`;
+      } else if (isComplete && processedCount > 0) {
+         bestCandidateEl.innerHTML = `<div class="alert alert-warning text-center shadow-sm"><i class="bi bi-exclamation-circle me-1"></i>Не удалось однозначно определить лучшего кандидата (проверьте результаты ниже).</div>`;
+      } else if (!isComplete && !hasError) {
+         bestCandidateEl.innerHTML = `<div class="text-center text-muted p-3">
+                     <div class="spinner-border spinner-border-sm text-primary" role="status"><span class="visually-hidden">Loading...</span></div>
+                     <span class="ms-2">Ожидание результатов для определения лучшего кандидата...</span>
+                 </div>`;
+      }
+
+
+      //  Отображение списка остальных результатов 
+      resultsListEl.innerHTML = '';
+      let resultsDisplayedCount = 0;
+      if (data.results && data.results.length > 0) {
+         data.results.forEach(res => {
+            if (data.best_candidate && res.id == data.best_candidate.id) return;
+
+            resultsDisplayedCount++;
+            let downloadLinkHTML = '';
+            if (res.stored_filename) {
+               const downloadUrl = `/download_resume/${encodeURIComponent(res.stored_filename)}`;
+               downloadLinkHTML = `<a href="${downloadUrl}" download="${htmlEscape(res.original_filename)}" class="btn btn-sm btn-outline-secondary download-link float-end" title="Скачать ${htmlEscape(res.original_filename)}"><i class="bi bi-download"></i></a>`;
+            }
+
+            const isFileError = res.analysis_text && res.analysis_text.startsWith("ОШИБКА ФАЙЛА:");
+            const isAIError = res.analysis_text && (res.analysis_text.startsWith("ОШИБКА AI:") || res.analysis_text.startsWith("КРИТИЧЕСКАЯ ОШИБКА"));
+
+            let cardBorderClass = 'border-light';
+            if (isFileError || isAIError) cardBorderClass = 'border-danger';
+
+            let itemHTML = `<div class="card result-item mb-3 shadow-sm ${cardBorderClass}">`;
+            itemHTML += '<div class="card-body">';
+
+            itemHTML += `<h5 class="card-title mb-1">${htmlEscape(res.original_filename)} ${downloadLinkHTML}</h5>`;
+
+            itemHTML += `<p class="card-subtitle mb-2 text-muted">`;
+            itemHTML += `<strong>Кандидат:</strong> ${htmlEscape(res.candidate_name || (isFileError ? 'N/A (Ошибка файла)' : (isAIError ? 'N/A (Ошибка анализа)' : 'Не найдено')))}`;
+            if (res.score !== null) {
+               itemHTML += `<span class="score-box">${res.score}/10</span>`;
+            } else if (!isFileError && !isAIError) {
+               itemHTML += `<span class="no-score">(Нет оценки)</span>`;
+            }
+            itemHTML += `</p><hr>`;
+
+            if (isFileError) {
+               itemHTML += `<div class="error-message"><strong>Ошибка обработки файла:</strong> ${htmlEscape(res.analysis_text.replace("ОШИБКА ФАЙЛА:", ""))}</div>`;
+            } else if (isAIError) {
+               itemHTML += `<div class="error-message"><strong>Ошибка анализа AI:</strong> ${htmlEscape(res.analysis_text.replace("ОШИБКА AI:", "").replace("КРИТИЧЕСКАЯ ОШИБКА ЗАДАЧИ:", ""))}</div>`;
+               if (res.analysis_html) {
+                  itemHTML += `<p class="mt-2 mb-1"><strong>Частичный анализ (если есть):</strong></p>`;
+                  itemHTML += `<div class="analysis-html-output" style="opacity: 0.7;">${res.analysis_html}</div>`;
+               }
+            } else { // Нет ошибок файла/AI, отображаем анализ (сворачиваемый)
+               itemHTML += `<p class="mb-1"><strong>Результат анализа:</strong></p>`;
+               itemHTML += `
+                             {# Отображаем краткий итог и кнопку "Развернуть" #}
+                             <div class="summary-output">
+                                 ${htmlEscape(res.summary_conclusion || 'Краткий итог не доступен.')} {# Используем summary_conclusion #}
+                                 ${res.analysis_html ? ` {# Показываем кнопку только если полный анализ есть #}
+                                     <button class="btn btn-link btn-sm p-0 ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAnalysisResult${res.id}" aria-expanded="false" aria-controls="collapseAnalysisResult${res.id}">
+                                         Развернуть
+                                     </button>
+                                 ` : ''}
+                             </div>
+
+                             {# Контейнер для полного анализа #}
+                             ${res.analysis_html ? ` {# Создаем скрытый блок только если полный анализ есть #}
+                                <div class="collapse mt-2" id="collapseAnalysisResult${res.id}"> {# Уникальный ID для сворачивания #}
+                                     <div class="card card-body p-2">
+                                         <div class="analysis-html-output">
+                                             ${res.analysis_html} {# Полный HTML анализа #}
+                                         </div>
+                                     </div>
+                                 </div>
+                             ` : `<p class="text-muted">Нет данных полного анализа.</p>`} {# Сообщение, если полного анализа нет #}
+                         `;
+            }
+
+            itemHTML += '</div></div>';
+            resultsListEl.innerHTML += itemHTML;
+         });
+      }
+
+      // Обновляем заголовок списка и сообщение об ожидании
+      if (resultsDisplayedCount > 0) {
+         resultsListHeader.style.display = 'block';
+         resultsCountEl.textContent = resultsDisplayedCount;
+         resultsWaitingMessage.style.display = 'none';
+      } else if (!isComplete && !hasError) {
+         resultsListHeader.style.display = 'none';
+         resultsWaitingMessage.style.display = 'block';
+         resultsWaitingMessage.innerHTML = '<i>Ожидание первых результатов обработки...</i>';
+      } else if (isComplete && processedCount === 0) {
+         resultsListHeader.style.display = 'none';
+         resultsWaitingMessage.style.display = 'block';
+         resultsWaitingMessage.innerHTML = '<i class="text-warning">Не найдено результатов для отображения (возможно, все файлы вызвали ошибки при обработке).</i>';
+      } else if (isComplete && resultsDisplayedCount === 0 && data.best_candidate) {
+         resultsListHeader.style.display = 'none';
+         resultsWaitingMessage.style.display = 'none';
+      }
+      else {
+         resultsListHeader.style.display = 'none';
+         resultsWaitingMessage.style.display = 'none';
+      }
+   }
+
+
+   // Функция опроса статуса
+   function pollStatus() {
+      if (!pollingActive) {
+         console.log("Опрос остановлен.");
+         if (pollInterval) clearInterval(pollInterval);
+         return;
+      }
+      console.log("Опрос статуса для batch:", batchId);
+
+      fetch(`/batch_status/${batchId}?total_tasks=${totalTasks}`)
+         .then(response => {
+            if (!response.ok) {
+               return response.text().then(text => {
+                  let errorDetails = `HTTP ${response.status} ${response.statusText}.`;
+                  if (text) { errorDetails += ` Ответ сервера: ${text}`; }
+                  const error = new Error(errorDetails);
+                  error.response = response;
+                  throw error;
+               });
+            }
+            return response.json();
+         })
+         .then(data => {
+            console.log("Получены данные статуса:", data);
+            updateUI(data);
+
+            if (data.status === 'COMPLETE' || data.status === 'ERROR') {
+               pollingActive = false;
+               clearInterval(pollInterval);
+               console.log(`Опрос остановлен (статус: ${data.status}).`);
+            }
+         })
+         .catch(error => {
+            console.error('Критическая ошибка при опросе статуса:', error);
+            updateUI({ status: 'ERROR', message: `Ошибка сети или сервера при получении статуса: ${error.message}` });
+            pollingActive = false;
+            clearInterval(pollInterval);
+         });
+   }
+
+   setTimeout(() => {
+      pollStatus();
+      if (pollingActive) {
+         pollInterval = setInterval(pollStatus, 4000);
+      }
+   }, 500);
+
+</script>
+{% endblock %}

@@ -1,0 +1,503 @@
+{% extends 'base.html' %}
+
+{% block title %}Детали Анализа для {{ analysis.candidate_name or analysis.original_filename }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+   {# Навигационная цепочка (хлебные крошки) #}
+   <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+         <li class="breadcrumb-item"><a href="{{ url_for('history') }}">История</a></li>
+         <li class="breadcrumb-item active" aria-current="page">Детали Анализа</li>
+      </ol>
+   </nav>
+
+   {# Заголовок страницы #}
+   <h1 class="mb-4">Детали Анализа для {{ analysis.candidate_name or analysis.original_filename }}</h1>
+
+   {# Отображение Flash-сообщений #}
+   {% with messages = get_flashed_messages(with_categories=true) %}
+   {% if messages %}
+   {% for category, message in messages %}
+   <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+      {{ message }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+   </div>
+   {% endfor %}
+   {% endif %}
+   {% endwith %}
+
+   <div class="row mb-4">
+      {# Левая колонка - Основная Информация и Запрос Доп. Инфо #}
+      <div class="col-md-4">
+         {# Блок с основной информацией #}
+         <div class="card shadow-sm mb-4"> {# Добавлен mb-4 для отступа снизу #}
+            <div class="card-header">
+               <h5 class="card-title mb-0">Основная Информация</h5>
+            </div>
+            <div class="card-body">
+               <p><strong>ФИО:</strong> {{ analysis.candidate_name or 'Не указано' }}</p>
+               <p><strong>Возраст:</strong> {{ analysis.age if analysis.age is not none else 'Не указан' }}</p>
+               <p><strong>Пол:</strong> {{ analysis.gender or 'Не указан' }}</p>
+               <p><strong>Контакты:</strong> {{ analysis.contacts_display | safe if analysis.contacts_display else 'Не
+                  извлечены' }}</p>
+
+               <p><strong>Зарплатные ожидания:</strong> {{ analysis.salary_expectation or 'Не указаны' }}</p>
+
+               <p><strong>Файл:</strong> {{ analysis.original_filename or 'Неизвестно' }}
+                  {% if analysis.stored_filename %}
+                  <a href="{{ url_for('download_resume', filename=analysis.stored_filename) }}"
+                     download="{{ analysis.original_filename or 'резюме' }}" class="ms-2"><i
+                        class="bi bi-download"></i></a>
+                  {% endif %}
+               </p>
+               <p><strong>Время Анализа:</strong> {{ analysis.timestamp.strftime('%d.%m.%Y %H:%M:%S') if
+                  analysis.timestamp else 'N/A' }}</p>
+               {% if analysis.batch_timestamp %}
+               <p><strong>Время Партии:</strong> {{ analysis.batch_timestamp.strftime('%d.%m.%Y %H:%M:%S') if
+                  analysis.batch_timestamp else 'N/A' }}</p>
+               {% endif %}
+
+               {# Оценки - ИСПОЛЬЗУЕМ score-box класс для оформления #}
+               <div class="mt-3">
+                  <h6>Оценки:</h6>
+                  <p class="mb-1"> {# Уменьшен отступ снизу #}
+                     <strong>Первичная:</strong>
+                     {% if analysis.score is not none %}
+                     {% set primary_score_class = 'high' if analysis.score >= 7 else ('medium' if analysis.score >= 5
+                     else 'low') %}
+                     <span class="score-box {{ primary_score_class }}">{{ analysis.score }}/10</span>
+                     {% else %}
+                     -
+                     {% endif %}
+                  </p>
+                  {% if analysis.re_evaluation_score is not none %}
+                  <p class="mb-1">
+                     <strong>Повторная:</strong>
+                     {% set re_score_class = 'high' if analysis.re_evaluation_score >= 7 else ('medium' if
+                     analysis.re_evaluation_score >= 5 else 'low') %}
+                     <span class="score-box {{ re_score_class }}">{{ analysis.re_evaluation_score }}/10</span>
+                     {% if analysis.re_evaluation_timestamp %}
+                     <small class="text-muted ms-2" title="Дата повторной оценки">({{
+                        analysis.re_evaluation_timestamp.strftime('%d.%m.%Y') }})</small>
+                     {% endif %}
+                  </p>
+                  {% endif %}
+               </div>
+
+               {# <p><strong>Описание вакансии:</strong> {{ analysis.job_description | replace('\n', '<br>') | safe if
+                  analysis.job_description else '-' }}</p> #}
+
+            </div>
+         </div>
+
+         {# Запрос дополнительной информации и статус #}
+         <div class="card shadow-sm mb-4"> {# Отдельная карточка для RFI #}
+            <div class="card-header">
+               <h5 class="card-title mb-0"><i class="bi bi-envelope me-1"></i> Запрос дополнительной информации</h5>
+            </div>
+            <div class="card-body">
+               {% set candidate_has_email = analysis.get('candidate_has_email', False) %} {# Получаем статус наличия
+               email #}
+               {% set rfi_status = analysis.get('rfi_status') %} {# Получаем статус запроса доп. инфо #}
+
+               {% if candidate_has_email %}
+               {# Если email есть, проверяем статус запроса #}
+
+               {# Определяем, нужно ли показать кнопку "Запросить доп. инфо" #}
+               {# Показываем ее, если status is none ИЛИ status - один из завершающих переоценку #}
+               {% if rfi_status is none or rfi_status in ['completed', 're_evaluated', 're_evaluation_failed',
+               're_evaluation_save_failed'] %}
+               {# Кнопка "Запросить доп. инфо" #}
+               {% if rfi_status is none %}
+               <p class="card-text">Для этого кандидата можно запросить дополнительную информацию.</p>
+               {% else %}
+               <p class="card-text">Запрос доп. информации был выполнен ранее. Можно запросить еще раз.</p>
+               {% endif %}
+
+               <a href="{{ url_for('request_additional_info', analysis_id=analysis.id) }}" class="btn btn-primary">
+                  <i class="bi bi-send me-1"></i> Запросить доп. инфо {% if rfi_status is not none %}еще раз{% endif %}
+               </a>
+
+               {% elif rfi_status == 'pending_recruiter_edit' %}
+               {# Если запрос на редактировании рекрутером #}
+               <p>Статус запроса: <span class="badge bg-warning">Редактирование</span></p>
+               <p class="card-text">Рекрутер начал подготовку вопросов, но не завершил отправку.</p>
+               {# Ссылка на страницу редактирования для продолжения #}
+               <a href="{{ url_for('request_additional_info', analysis_id=analysis.id) }}" class="btn btn-warning">
+                  <i class="bi bi-pencil me-1"></i> Продолжить редактирование и отправить
+               </a>
+
+               {% elif rfi_status == 'sent' %}
+               {# Если запрос отправлен, но кандидат еще не ответил #}
+               <p>Статус запроса: <span class="badge bg-info">Запрошено</span></p>
+               {% if analysis.rfi_timestamp %}
+               <p class="text-muted small card-text">Отправлено: {{ analysis.rfi_timestamp.strftime('%d.%m.%Y %H:%M') }}
+               </p>
+               {% endif %}
+               <p class="card-text">Ожидаются ответы кандидата.</p>
+               {# Можно добавить кнопку "Отменить запрос", если нужно #}
+
+               {% elif rfi_status == 're_evaluating' %}
+               {# Если переоценка в процессе #}
+               <p>Статус запроса: <span class="badge bg-primary">Переоценка в процессе...</span></p>
+               <p class="card-text">Результаты повторной оценки скоро появятся.</p>
+
+               {% elif rfi_status == 'cancelled' %} {# Если добавите статус отмены #}
+               <p>Статус запроса: <span class="badge bg-secondary">Отменено</span></p>
+               <p class="card-text">Запрос был отменен.</p>
+               {# Возможно, здесь тоже нужно показать кнопку "Запросить доп. инфо" #}
+               {# <a href="{{ url_for('request_additional_info', analysis_id=analysis.id) }}" class="btn btn-primary">
+                  Запросить доп. инфо </a> #}
+
+               {# Отображение информации при завершенных статусах (completed, re_evaluated, re_evaluation_failed,
+               re_evaluation_save_failed) #}
+               {# Этот блок else будет выполняться для статусов completed, re_evaluated, re_evaluation_failed,
+               re_evaluation_save_failed #}
+               {# В этих статусах мы уже показываем кнопку "Запросить доп. инфо" в первом IF условии #}
+               {% else %} {# Показываем статус и информацию для завершенных состояний RFI #}
+
+               {% if rfi_status == 'completed' %}
+               <p>Статус запроса: <span class="badge bg-success">Ответы получены</span></p>
+               {% if analysis.rfi_timestamp %}
+               <p class="text-muted small card-text">Ответы получены: {{ analysis.rfi_timestamp.strftime('%d.%m.%Y
+                  %H:%M') }}</p>
+               {% endif %}
+               {% elif rfi_status == 're_evaluated' %}
+               <p>Статус запроса: <span class="badge bg-success">Переоценено</span></p>
+               {% if analysis.re_evaluation_timestamp %}
+               <p class="text-muted small card-text">Повторная оценка выполнена: {{
+                  analysis.re_evaluation_timestamp.strftime('%d.%m.%Y %H:%M') }}</p>
+               {% endif %}
+               {% elif rfi_status in ['re_evaluation_failed', 're_evaluation_save_failed'] %}
+               <p>Статус запроса: <span class="badge bg-danger">Ошибка переоценки</span></p>
+               <p class="text-danger small card-text">
+                  Ошибка: {{ analysis.get('rfi_re_evaluation_error') or analysis.get('re_evaluation_error') or
+                  'Неизвестная ошибка.' }}
+               </p>
+               {% endif %}
+
+               {# Отображаем ответы кандидата (актуально для completed, re_evaluated, re_evaluation_failed,
+               re_evaluation_save_failed) #}
+               {% if analysis.rfi_answers_html %}
+               <div class="alert alert-light mt-3" role="alert">
+                  <h6 class="alert-heading">Ответы кандидата:</h6>
+                  <div class="candidate-answers-output small">
+                     {{ analysis.rfi_answers_html | safe }}
+                  </div>
+               </div>
+               {% endif %}
+
+               {# Кнопка "Переоценить" показывается только при статусе completed #}
+               {% if rfi_status == 'completed' %}
+               {# Убедитесь, что у вас есть JS код для обработки кнопки с классом re-evaluate-btn #}
+               <button class="btn btn-success re-evaluate-btn mt-3" data-analysis-id="{{ analysis.id }}"
+                  data-candidate-name="{{ analysis.candidate_name | escape }}"
+                  title="Запустить повторную оценку с учетом ответов кандидата">
+                  <i class="bi bi-arrow-repeat me-1"></i> Переоценить с ответами
+               </button>
+               {% endif %}
+
+               {% endif %}
+
+               {% else %}
+               {# Если email кандидата не найден #}
+               <p class="text-muted card-text">Email кандидата не найден в контактах. Невозможно запросить
+                  дополнительную информацию.</p>
+               {% endif %}
+
+            </div>
+         </div>
+         {# Конец блока Запрос Доп. Инфо #}
+
+         {# Блок с описанием вакансии #}
+         <div class="card shadow-sm mb-4">
+            <div class="card-header">
+               <h5 class="card-title mb-0">Описание Вакансии</h5>
+            </div>
+            <div class="card-body">
+               <div class="analysis-html-output small" style="max-height: 150px; overflow-y: auto;"> {# Добавлен скролл
+                  и ограничение высоты #}
+                  {{ analysis.job_description | replace('\n', '<br>') | safe if analysis.job_description else '-' }}
+               </div>
+            </div>
+         </div>
+
+
+      </div>
+
+
+      {# Правая колонка - Результаты анализа #}
+      <div class="col-md-8">
+         {# Первичный анализ #}
+         {% if analysis.analysis_text %}
+         <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+               <h5 class="card-title mb-0">Результат Первичного Анализа</h5>
+            </div>
+            <div class="card-body">
+               {% if analysis.analysis_text.startswith(("ОШИБКА", "КРИТИЧЕСКАЯ")) %}
+               <div class="error-message text-danger">{{ analysis.analysis_text | escape }}</div>
+               {% else %}
+               {# Выводим краткий итог, если есть #}
+               {% if analysis.summary_conclusion %}
+               <p><strong>Итог:</strong> {{ analysis.summary_conclusion }}</p>
+               {% endif %}
+               {# Выводим полный анализ (HTML) #}
+               <div class="analysis-html-output">
+                  {{ analysis.analysis_html | safe }}
+               </div>
+               {% endif %}
+            </div>
+         </div>
+         {% endif %}
+
+         {# БЛОК: Рекомендации по интервью (Отображаем новые, если есть, иначе старые) #}
+         {# Сначала проверяем наличие рекомендаций из повторного анализа #}
+         {% if analysis.re_evaluation_recommendations %}
+         <div class="card shadow-sm mb-4">
+            {# Заголовок с указанием, что это рекомендации из повторного анализа #}
+            <div class="card-header bg-success text-white">
+               <h5 class="card-title mb-0"><i class="bi bi-chat-text me-1"></i> Рекомендации по Интервью</h5>
+            </div>
+            <div class="card-body">
+               <div class="recommendations-output">
+                  {# Выводим текст рекомендаций из повторного анализа. #}
+                  {{ analysis.re_evaluation_recommendations | safe }}
+               </div>
+            </div>
+         </div>
+
+         {# Если рекомендаций из повторного анализа нет, проверяем наличие рекомендаций из первичного анализа #}
+         {% elif analysis.interview_recommendations_html %}
+         <div class="card shadow-sm mb-4">
+            {# Заголовок с указанием, что это рекомендации из первичного анализа #}
+            <div class="card-header bg-success text-white">
+               <h5 class="card-title mb-0"><i class="bi bi-chat-text me-1"></i> Рекомендации по Интервью (Первичный
+                  анализ)</h5>
+            </div>
+            <div class="card-body">
+               <div class="recommendations-output">
+                  {# Выводим текст рекомендаций из первичного анализа (который, предположительно, уже HTML) #}
+                  {{ analysis.interview_recommendations_html | safe }}
+               </div>
+            </div>
+         </div>
+         {% endif %}
+         {# Если ни тех, ни других рекомендаций нет, блок не отображается #}
+
+
+         {# Ответы кандидата на доп. вопросы - Отображаем их здесь, если они были получены #}
+         {% if analysis.rfi_status in ['completed', 're_evaluating', 're_evaluated', 're_evaluation_failed',
+         're_evaluation_save_failed'] and analysis.rfi_answers_html %} {# Используем rfi_answers_html #}
+         <div class="card shadow-sm mb-4">
+            <div class="card-header bg-info text-white">
+               <h5 class="card-title mb-0"><i class="bi bi-reply me-1"></i> Ответы Кандидата на Дополнительные Вопросы
+               </h5>
+            </div>
+            <div class="card-body">
+               <div class="candidate-answers-output small">
+                  {{ analysis.rfi_answers_html | safe }} {# Используем rfi_answers_html и safe #}
+               </div>
+            </div>
+         </div>
+         {% endif %}
+
+
+         {# Повторный анализ #}
+         {% if analysis.re_evaluation_text %}
+         <div class="card shadow-sm mb-4">
+            <div class="card-header bg-warning text-dark"> {# Желтый заголовок для повторного анализа #}
+               <h5 class="card-title mb-0"><i class="bi bi-arrow-repeat me-1"></i> Результат Повторного Анализа</h5>
+            </div>
+            <div class="card-body">
+               {# Выводим краткий итог повторного анализа, если есть #}
+               {% if analysis.re_evaluation_summary_conclusion %}
+               <p><strong>Итог:</strong> {{ analysis.re_evaluation_summary_conclusion }}</p>
+               {% endif %}
+               {# Выводим полный повторный анализ (HTML) #}
+               <div class="re-evaluation-html-output">
+                  {{ analysis.re_evaluation_html | safe }}
+               </div>
+               {# Показываем ошибку переоценки, если есть #}
+               {% if analysis.re_evaluation_error or analysis.rfi_re_evaluation_error %}
+               <div class="alert alert-danger alert-sm p-1 mt-2" role="alert">
+                  Ошибка: {{ analysis.get('re_evaluation_error') or analysis.get('rfi_re_evaluation_error') or
+                  'Неизвестная ошибка' }}
+               </div>
+               {% endif %}
+            </div>
+         </div>
+         {% endif %}
+
+         {# Сообщение об ошибке первичного анализа, если не было analysis_text #}
+         {% if not analysis.analysis_text and not analysis.analysis_html and analysis.error_info %} {# Добавлена
+         проверка на error_info #}
+         <div class="alert alert-danger shadow-sm" role="alert">
+            <i class="bi bi-x-octagon me-2"></i>Ошибка первичного анализа: {{ analysis.error_info | escape }}
+         </div>
+         {% elif not analysis.analysis_text and not analysis.analysis_html %} {# Если нет текста и нет error_info #}
+         <div class="alert alert-warning shadow-sm" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>Полный текст первичного анализа не доступен для этой записи.
+         </div>
+         {% endif %}
+
+
+         {# Вопросы для интервью #}
+         {% if questions %}
+         <div class="card shadow-sm mb-4">
+            <div class="card-header bg-secondary text-white">
+               <h5 class="card-title mb-0"><i class="bi bi-question-circle me-1"></i> Уточняющие Вопросы для Интервью
+               </h5>
+            </div>
+            <div class="card-body">
+               <ul class="list-group list-group-flush">
+                  {% for question in questions %}
+                  <li class="list-group-item">
+                     {{ question.question_text }}
+                     {% if question.source == 'AI' %}
+                     <span class="badge bg-info ms-2">AI</span>
+                     {% elif question.source == 'Sent' %}
+                     <span class="badge bg-primary ms-2">Отправлен</span>
+                     {% endif %}
+                     {% if question.created_at %}
+                     <small class="text-muted ms-2" title="Время генерации/отправки">({{
+                        question.created_at.strftime('%d.%m.%Y %H:%M') }})</small>
+                     {% endif %}
+                  </li>
+                  {% endfor %}
+               </ul>
+            </div>
+         </div>
+         {% endif %}
+
+
+      </div>
+   </div>
+
+
+   {# Кнопка для возврата на страницу истории #}
+   <div class="text-center mt-4">
+      <a href="{{ url_for('history') }}" class="btn btn-secondary"><i class="bi bi-arrow-left me-2"></i>Вернуться к
+         Истории</a>
+   </div>
+
+</div>
+
+<style>
+   .score-box {
+      display: inline-block;
+      padding: .25em .4em;
+      font-size: 0.8em;
+      font-weight: 700;
+      line-height: 1;
+      text-align: center;
+      white-space: nowrap;
+      vertical-align: baseline;
+      border-radius: .25rem;
+      color: #fff;
+      background-color: #6c757d;
+      /* Серый по умолчанию */
+   }
+
+   .score-box.high {
+      background-color: #28a745;
+   }
+
+   /* Зеленый для высокой оценки */
+   .score-box.medium {
+      background-color: #ffc107;
+      color: #212529;
+   }
+
+   /* Желтый для средней */
+   .score-box.low {
+      background-color: #dc3545;
+   }
+
+   /* Красный для низкой */
+
+   /* Стили для блоков результатов анализа */
+   .analysis-html-output,
+   .re-evaluation-html-output {
+      margin-top: 10px;
+      max-height: 400px;
+      overflow-y: auto;
+      background-color: #f9f9f9;
+      padding: 15px;
+      border: 1px solid #e7e7e7;
+      border-radius: 4px;
+      font-size: 0.95em;
+      line-height: 1.6;
+   }
+
+   .candidate-answers-output {
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+   }
+
+   /* Стиль для блоков с ошибками в карточках */
+   .alert-sm {
+      padding: .25rem .5rem;
+      font-size: .875em;
+   }
+
+   /* Стиль для заголовка карточки при ошибке */
+   .card-header.bg-danger {
+      color: #fff;
+   }
+</style>
+
+
+{% block scripts %}
+{{ super() }}
+<script>
+   document.addEventListener('DOMContentLoaded', function () {
+      // Обработка клика по кнопке "Переоценить"
+      document.querySelectorAll('.re-evaluate-btn').forEach(button => {
+         button.addEventListener('click', function () {
+            const analysisId = this.dataset.analysisId;
+            const candidateName = this.dataset.candidateName || 'кандидата'; // Получаем имя или используем дефолт
+            // Сообщение подтверждения без ID
+            if (confirm(`Вы уверены, что хотите запустить повторную оценку для кандидата ${candidateName} с учетом полученных ответов? Это может занять некоторое время.`)) {
+               // Если пользователь подтвердил, выполняем POST запрос на маршрут повторной оценки
+               // Используем fetch API для отправки POST запроса
+               fetch(`{{ url_for('re_evaluate', analysis_id=0) }}`.replace('/0', '/' + analysisId), {
+                  method: 'POST',
+                  headers: {
+                     'Content-Type': 'application/json',
+                     // TODO: Добавьте CSRF токен, если используете его в Flask-WTF или подобном
+                     // 'X-CSRFToken': 'Ваш CSRF токен'
+                  },
+               })
+                  .then(response => {
+                     if (response.ok) {
+                        // Если запрос успешен (статус 2xx)
+                        return response.json(); // Парсим JSON ответ
+                     }
+                     // Если ошибка (статус 4xx или 5xx)
+                     // Генерируем ошибку, чтобы попасть в .catch()
+                     return response.text().then(text => { throw new Error(`Ошибка HTTP: ${response.status} - ${text}`) });
+                  })
+                  .then(data => {
+                     // Обработка успешного ответа от сервера
+                     console.log('Повторная оценка запущена:', data);
+                     // Можно показать сообщение об успешном запуске или обновить часть страницы
+                     alert('Повторная оценка успешно запущена!'); // Пример: показываем alert
+                     // Опционально: перенаправить пользователя или обновить статус на странице
+                     window.location.reload();
+                  })
+                  .catch(error => {
+                     // Обработка ошибок запроса или ответа
+                     console.error('Ошибка при запуске повторной оценки:', error);
+                     alert(`Ошибка при запуске повторной оценки: ${error.message}`); // Показываем alert с ошибкой
+                  });
+
+            }
+         });
+      });
+
+   });
+</script>
+{% endblock %}
+{% endblock %}

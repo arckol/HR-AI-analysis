@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+
+{% block title %}Главная - Анализатор Резюме{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+   <div class="col-lg-10 col-xl-9"> {# Ограничиваем ширину формы #}
+      <h1 class="mb-4 text-center">Анализатор Резюме</h1>
+      <p class="lead text-center mb-4">Загрузите резюме кандидатов и описание вакансии для автоматического анализа.</p>
+
+      {# Показываем форму только авторизованным пользователям #}
+      {% if current_user.is_authenticated %}
+      <div class="card shadow-sm mb-4">
+         <div class="card-header">
+            <h2 class="h5 mb-0"><i class="bi bi-upload me-2"></i>Загрузка и анализ</h2>
+         </div>
+         <div class="card-body p-4">
+            <form id="analyze-form" action="{{ url_for('analyze') }}" method="post" enctype="multipart/form-data">
+               {# Поле для файлов с классами Bootstrap #}
+               <div class="mb-3">
+                  <label for="resume" class="form-label"><strong>1. Загрузите файл(ы) резюме (PDF,
+                        DOCX):</strong></label>
+                  <input class="form-control" type="file" id="resume" name="resume_file" accept=".pdf,.docx" required
+                     multiple>
+                  <div class="form-text">Вы можете выбрать сразу несколько файлов.</div>
+               </div>
+
+               {# Поле для описания вакансии #}
+               <div class="mb-3">
+                  <label for="job_description" class="form-label"><strong>2. Описание вакансии / Ключевые
+                        требования:</strong></label>
+                  <textarea class="form-control" id="job_description" name="job_description" rows="8" required
+                     placeholder="Вставьте сюда полное описание вакансии или основные требования к кандидату...">{{ request.form['job_description'] if request.form else '' }}</textarea>
+                  <div class="form-text">Чем подробнее описание, тем точнее будет анализ.</div>
+               </div>
+
+               {# Кнопка отправки #}
+               <div class="d-grid gap-2 mt-4"> {# Растягиваем кнопку для больших экранов #}
+                  <button type="submit" class="btn btn-success btn-lg">
+                     <i class="bi bi-play-circle me-2"></i> {# Иконка Bootstrap #}
+                     Начать Анализ
+                  </button>
+               </div>
+
+            </form>
+         </div>
+      </div>
+
+
+      {# Индикатор загрузки, который показывается при отправке формы #}
+      <div id="loading-indicator" class="alert alert-info d-none" role="alert"> {# Используем d-none для скрытия по
+         умолчанию #}
+         <div class="d-flex align-items-center">
+            <span class="processing-spinner me-2"></span>
+            <strong>Обработка...</strong>
+            <span class="ms-auto">Отправка файлов на анализ. Пожалуйста, подождите, скоро вы будете перенаправлены на
+               страницу результатов...</span>
+         </div>
+      </div>
+
+      {% else %}
+      {# Сообщение для неавторизованных пользователей #}
+      <div class="alert alert-info text-center shadow-sm" role="alert">
+         <h4 class="alert-heading">Добро пожаловать!</h4>
+         <p>Для начала работы с анализатором резюме, пожалуйста, войдите в свою учетную запись или зарегистрируйтесь.
+         </p>
+         <hr>
+         <a href="{{ url_for('login') }}" class="btn btn-primary me-2"><i
+               class="bi bi-box-arrow-in-right me-1"></i>Войти</a>
+         <a href="{{ url_for('register') }}" class="btn btn-success"><i
+               class="bi bi-person-plus me-1"></i>Зарегистрироваться</a>
+      </div>
+      {% endif %}
+
+   </div>
+</div>
+{% endblock %}
+
+
+{% block scripts %} {# Добавляем скрипт в блок scripts базового шаблона #}
+{# JavaScript для показа индикатора загрузки ПЕРЕД перенаправлением #}
+<script>
+   const analyzeForm = document.getElementById('analyze-form');
+   const loadingIndicator = document.getElementById('loading-indicator');
+
+   if (analyzeForm && loadingIndicator) {
+      analyzeForm.addEventListener('submit', function (event) {
+         const fileInput = document.getElementById('resume');
+         const jobDesc = document.getElementById('job_description');
+         const submitButton = analyzeForm.querySelector('button[type="submit"]');
+
+         let isValid = true;
+         if (!jobDesc || jobDesc.value.trim() === '') {
+            console.warn("Описание вакансии не заполнено.");
+            isValid = false;
+         }
+         if (!fileInput || fileInput.files.length === 0) {
+            console.warn("Файлы резюме не выбраны.");
+            isValid = false;
+         }
+
+         // Если форма валидна (проверки прошли или HTML5 валидация сработала)
+         // и событие submit не было отменено
+         if (isValid) {
+            // Показываем индикатор загрузки
+            loadingIndicator.classList.remove('d-none');
+
+            // Блокируем кнопку и показываем спиннер внутри нее
+            if (submitButton) {
+               submitButton.disabled = true;
+               // Используем Bootstrap спиннер
+               submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Идет отправка...';
+            }
+         }
+      });
+   }
+</script>
+{% endblock %}

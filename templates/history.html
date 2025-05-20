@@ -1,0 +1,842 @@
+{% extends 'base.html' %}
+
+{% block title %}История Анализов{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">История Анализов Резюме</h1>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+   {{ message }}
+   <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+{% endfor %}
+{% endif %}
+{% endwith %}
+
+<div class="card shadow-sm mb-4">
+   <div class="card-body">
+      <h2 class="card-title h5 mb-3"><i class="bi bi-filter me-1"></i>Фильтр и сортировка</h2>
+      {# action="{{ url_for('history') }}" и method="GET" для фильтрации #}
+      {# request_args передается как отдельный словарь для сохранения состояния #}
+      <form method="GET" action="{{ url_for('history') }}" class="row g-2 align-items-center">
+
+         {#  ПЕРВЫЙ РЯД: ПОИСК, КНОПКА РАСКРЫТИЯ, КНОПКИ ПРИМЕНИТЬ/СБРОСИТЬ  #}
+         <div class="col-md-5">
+            <label for="search" class="form-label visually-hidden">Поиск (ФИО / Файл / Контакты):</label>
+            {# Используем request_args словарь для получения текущего значения поиска #}
+            <input type="text" class="form-control form-control-sm" id="search" name="search"
+               value="{{ request_args.get('search', '') }}" placeholder="Поиск (ФИО / Файл / Контакты)..."
+               aria-label="Поиск по ФИО, файлу или контактам">
+         </div>
+
+         {#  Кнопка раскрытия как в search_database.html  #}
+         <div class="col-md-auto d-flex align-items-center p-0">
+            <button class="btn btn-link btn-sm text-decoration-none" type="button" data-bs-toggle="collapse"
+               data-bs-target="#filtersCollapse" aria-expanded="false" aria-controls="filtersCollapse">
+               <i class="bi bi-sliders me-1"></i> Расширенный поиск / Сортировка
+            </button>
+         </div>
+
+         <div class="col-md-3 d-grid gap-1 ms-auto">
+            <button type="submit" class="btn btn-primary btn-sm">
+               <i class="bi bi-search"></i> Применить
+            </button>
+            {# Ссылка сброса - просто на маршрут history без параметров #}
+            {# Проверяем, есть ли вообще активные параметры фильтрации, чтобы показывать "Сбросить" только когда есть
+            что сбрасывать #}
+            {% set has_active_filters = request_args.get('search', '') or request_args.get('age_from', '') or
+            request_args.get('age_to', '') or (request_args.get('gender', '') != '') or request_args.get('date_from',
+            '') or request_args.get('date_to', '') or (request_args.get('rfi_status', '') != '') %} {# Added rfi_status
+            and improved check for gender/rfi_status #}
+            {% if has_active_filters or request_args.get('sort_by', 'batch_timestamp') != 'batch_timestamp' or
+            request_args.get('sort_dir', 'desc') != 'desc' %} {# Corrected default sort_by and sort_dir checks #}
+            <a href="{{ url_for('history') }}" class="btn btn-outline-secondary btn-sm"><i
+                  class="bi bi-x-circle me-1"></i>Сбросить</a>
+            {% endif %}
+         </div>
+
+
+         {#  ВТОРОЙ РЯД (СВОРАЧИВАЕМЫЙ): ВСЕ ОСТАЛЬНЫЕ ФИЛЬТРЫ И СОРТИРОВКА  #}
+         <div class="collapse row g-2 mt-2" id="filtersCollapse">
+
+            {# Фильтр по дате партии #}
+            <div class="col-md-3">
+               <label class="form-label">Дата партии:</label>
+               <div class="dropdown w-100">
+                  <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex align-items-center"
+                     type="button" id="dateFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                     <span class="flex-grow-1" id="dateFilterDisplay">
+                        {% set current_date_from = request_args.get('date_from') %}
+                        {% set current_date_to = request_args.get('date_to') %}
+                        {% if current_date_from or current_date_to %}
+                        {% if current_date_from %}{{ current_date_from }}{% else %}С{% endif %} по {% if current_date_to
+                        %}{{ current_date_to }}{% else %}По{% endif %}
+                        {% else %}
+                        Выберите диапазон дат
+                        {% endif %}
+                     </span>
+                  </button>
+                  <ul class="dropdown-menu" aria-labelledby="dateFilterDropdown" style="padding: 10px;">
+                     <li>
+                        <label for="date_from_dropdown" class="form-label small mb-0">С:</label> 
+                        <input type="date" class="form-control form-control-sm" id="date_from_dropdown" name="date_from"
+                           value="{{ request_args.get('date_from', '') }}">
+                     </li>
+                     <li>
+                        <hr class="dropdown-divider">
+                     </li>
+                     <li>
+                        <label for="date_to_dropdown" class="form-label small mb-0">По:</label>
+                        <input type="date" class="form-control form-control-sm" id="date_to_dropdown" name="date_to"
+                           value="{{ request_args.get('date_to', '') }}">
+                     </li>
+                  </ul>
+               </div>
+            </div>
+
+            {# Фильтр по возрасту #}
+            <div class="col-md-3">
+               <label class="form-label">Возраст:</label>
+               <div class="dropdown w-100">
+                  <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex align-items-center"
+                     type="button" id="ageFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                     <span class="flex-grow-1" id="ageFilterDisplay">
+                        {% set current_age_from = request_args.get('age_from') %}
+                        {% set current_age_to = request_args.get('age_to') %}
+                        {% if current_age_from is not none and current_age_from != '' or current_age_to is not none and
+                        current_age_to != '' %}
+                        {% if current_age_from is not none and current_age_from != '' %}{{ current_age_from }}{% else
+                        %}От{% endif %} - {% if current_age_to is not none and current_age_to != '' %}{{ current_age_to
+                        }}{% else %}До{% endif %} лет
+                        {% else %}
+                        Выберите возраст
+                        {% endif %}
+                     </span>
+                  </button>
+                  <ul class="dropdown-menu" aria-labelledby="ageFilterDropdown" style="padding: 10px;">
+                     <li>
+                        <div class="d-flex align-items-center">
+                           <label for="age_from_dropdown" class="form-label me-2 mb-0">От:</label>
+                           <input type="number" class="form-control form-control-sm w-auto" id="age_from_dropdown"
+                              name="age_from" value="{{ request_args.get('age_from', '') }}" min="0"
+                              style="width: 60px;">
+                        </div>
+                     </li>
+                     <li>
+                        <hr class="dropdown-divider">
+                     </li>
+                     <li>
+                        <div class="d-flex align-items-center"> 
+                           <label for="age_to_dropdown" class="form-label me-2 mb-0">До:</label> 
+                           <input type="number" class="form-control form-control-sm w-auto" id="age_to_dropdown"
+                              name="age_to" value="{{ request_args.get('age_to', '') }}" min="0" style="width: 60px;">
+                        </div>
+                     </li>
+                  </ul>
+               </div>
+            </div>
+
+            {# Фильтр по полу #}
+            <div class="col-md-2">
+               <label class="form-label">Пол:</label>
+               <div class="dropdown w-100">
+                  <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex align-items-center"
+                     type="button" id="genderFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                     <span class="flex-grow-1" id="genderFilterDisplay">
+                        {% set current_gender = request_args.get('gender', '') %}
+                        {% if current_gender == 'Мужской' %}Мужской
+                        {% elif current_gender == 'Женский' %}Женский
+                        {% elif current_gender == '__none__' %}Не указан
+                        {% else %}Любой {# Changed default text #}
+                        {% endif %}
+                     </span>
+                  </button>
+                  <ul class="dropdown-menu" aria-labelledby="genderFilterDropdown">
+                     {# data-value соответствует значениям в БД или специальному значению для "Не указан" #}
+                     <li><a class="dropdown-item {% if current_gender == '' %}active{% endif %}" href="#"
+                           data-value="">Любой</a></li> {# Changed text and value #}
+                     <li><a class="dropdown-item {% if current_gender == 'Мужской' %}active{% endif %}" href="#"
+                           data-value="Мужской">Мужской</a></li>
+                     <li><a class="dropdown-item {% if current_gender == 'Женский' %}active{% endif %}" href="#"
+                           data-value="Женский">Женский</a></li>
+                     <li><a class="dropdown-item {% if current_gender == '__none__' %}active{% endif %}" href="#"
+                           data-value="__none__">Не указан</a></li>
+                  </ul>
+                  <input type="hidden" name="gender" id="gender_hidden_input"
+                     value="{{ request_args.get('gender', '') }}">
+               </div>
+            </div>
+
+            {# ФИЛЬТР: Статус запроса доп. инфо (RFI Status) #}
+            <div class="col-md-3"> 
+               <label class="form-label">Статус RFI:</label>
+               <div class="dropdown w-100">
+                  <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex align-items-center"
+                     type="button" id="rfiStatusFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                     <span class="flex-grow-1" id="rfiStatusFilterDisplay">
+                        {# Определяем текущий выбранный текст для статуса RFI #}
+                        {% set current_rfi_status = request_args.get('rfi_status', '') %}
+                        {% if current_rfi_status == 'pending_recruiter_edit' %}Редактирование
+                        {% elif current_rfi_status == 'sent' %}Запрошено
+                        {% elif current_rfi_status == 'completed' %}Получено
+                        {% elif current_rfi_status == 're_evaluating' %}Переоценка
+                        {% elif current_rfi_status == 're_evaluated' %}Переоценено
+                        {% elif current_rfi_status == 're_evaluation_failed' %}Ошибка переоценки
+                        {% elif current_rfi_status == 're_evaluation_save_failed' %}Ошибка сохранения переоценки
+                        {% elif current_rfi_status == 'cancelled' %}Отменено
+                        {% elif current_rfi_status == '__none__' %}Нет запроса
+                        {% else %}Любой статус {# Changed default text #}
+                        {% endif %}
+                     </span>
+                  </button>
+                  <ul class="dropdown-menu" aria-labelledby="rfiStatusFilterDropdown">
+                     {# data-value соответствует значениям в БД или специальному значению для "Нет запроса" #}
+                     <li><a class="dropdown-item {% if current_rfi_status == '' %}active{% endif %}" href="#"
+                           data-value="">Любой статус</a></li> {# Changed text and value #}
+                     <li><a class="dropdown-item {% if current_rfi_status == '__none__' %}active{% endif %}" href="#"
+                           data-value="__none__">Нет запроса</a></li> {# Added "Нет запроса" filter #}
+                     <li><a class="dropdown-item {% if current_rfi_status == 'pending_recruiter_edit' %}active{% endif %}"
+                           href="#" data-value="pending_recruiter_edit">Редактирование</a></li>
+                     <li><a class="dropdown-item {% if current_rfi_status == 'sent' %}active{% endif %}" href="#"
+                           data-value="sent">Запрошено</a></li>
+                     <li><a class="dropdown-item {% if current_rfi_status == 'completed' %}active{% endif %}" href="#"
+                           data-value="completed">Получено</a></li>
+                     <li><a class="dropdown-item {% if current_rfi_status == 're_evaluating' %}active{% endif %}"
+                           href="#" data-value="re_evaluating">Переоценка</a></li>
+                     <li><a class="dropdown-item {% if current_rfi_status == 're_evaluated' %}active{% endif %}"
+                           href="#" data-value="re_evaluated">Переоценено</a></li>
+                     <li><a class="dropdown-item {% if current_rfi_status == 're_evaluation_failed' %}active{% endif %}"
+                           href="#" data-value="re_evaluation_failed">Ошибка переоценки</a></li>
+                     <li><a class="dropdown-item {% if current_rfi_status == 're_evaluation_save_failed' %}active{% endif %}"
+                           href="#" data-value="re_evaluation_save_failed">Ошибка сохранения переоценки</a></li>
+                     <li><a class="dropdown-item {% if current_rfi_status == 'cancelled' %}active{% endif %}" href="#"
+                           data-value="cancelled">Отменено</a></li>
+                  </ul>
+                  {# Скрытое поле для хранения выбранного значения статуса RFI #}
+                  <input type="hidden" id="rfi_status_hidden_input" name="rfi_status" value="{{ current_rfi_status }}">
+               </div>
+            </div>
+
+
+            {# Сортировка по полю #}
+            <div class="col-md-3"> 
+               <label class="form-label">Сортировать по:</label>
+               <div class="dropdown w-100">
+                  <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex align-items-center"
+                     type="button" id="sortByFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                     <span class="flex-grow-1" id="sortByFilterDisplay">
+                        {% set sort_by_display = {
+                        'batch_timestamp': 'Дате партии',
+                        'timestamp': 'Времени анализа',
+                        'candidate_name': 'ФИО',
+                        'score': 'Оценке (перв.)',
+                        'age': 'Возрасту',
+                        'original_filename': 'Файлу',
+                        'job_description': 'Описанию вакансии',
+                        'contacts_extracted': 'Контактам',
+                        'gender': 'Полу',
+                        're_evaluation_score': 'Оценке (повтор.)',
+                        're_evaluation_timestamp': 'Дате повторной оценки'
+                        } %}
+                        {% set current_sort_by = request_args.get('sort_by', 'batch_timestamp') %}
+                        {{ sort_by_display.get(current_sort_by, 'Дате партии') }}
+                     </span>
+                  </button>
+                  <ul class="dropdown-menu" aria-labelledby="sortByFilterDropdown">
+                     <li><a class="dropdown-item {% if current_sort_by == 'batch_timestamp' %}active{% endif %}"
+                           href="#" data-value="batch_timestamp">Дате партии</a></li>
+                     <li><a class="dropdown-item {% if current_sort_by == 'timestamp' %}active{% endif %}" href="#"
+                           data-value="timestamp">Времени анализа</a></li>
+                     <li><a class="dropdown-item {% if current_sort_by == 'candidate_name' %}active{% endif %}" href="#"
+                           data-value="candidate_name">ФИО</a></li>
+                     <li><a class="dropdown-item {% if current_sort_by == 'score' %}active{% endif %}" href="#"
+                           data-value="score">Оценке (перв.)</a></li> {# Changed text #}
+                     <li><a class="dropdown-item {% if current_sort_by == 'age' %}active{% endif %}" href="#"
+                           data-value="age">Возрасту</a></li>
+                     <li><a class="dropdown-item {% if current_sort_by == 'original_filename' %}active{% endif %}"
+                           href="#" data-value="original_filename">Файлу</a></li>
+                     <li><a class="dropdown-item {% if current_sort_by == 'job_description' %}active{% endif %}"
+                           href="#" data-value="job_description">Описанию вакансии</a></li>
+                     <li><a class="dropdown-item {% if current_sort_by == 'contacts_extracted' %}active{% endif %}"
+                           href="#" data-value="contacts_extracted">Контактам</a></li>
+                     <li><a class="dropdown-item {% if current_sort_by == 'gender' %}active{% endif %}" href="#"
+                           data-value="gender">Полу</a></li>
+                     <li><a class="dropdown-item {% if current_sort_by == 're_evaluation_score' %}active{% endif %}"
+                           href="#" data-value="re_evaluation_score">Оценке (повтор.)</a></li> {# Changed text #}
+                     <li><a class="dropdown-item {% if current_sort_by == 're_evaluation_timestamp' %}active{% endif %}"
+                           href="#" data-value="re_evaluation_timestamp">Дате повторной оценки</a></li>
+                  </ul>
+                  <input type="hidden" name="sort_by" id="sort_by_hidden_input"
+                     value="{{ request_args.get('sort_by', '') }}">
+               </div>
+            </div>
+
+            {# Направление сортировки #}
+            <div class="col-md-2"> 
+               <label class="form-label">Направление:</label>
+               <div class="dropdown w-100">
+                  <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex align-items-center"
+                     type="button" id="sortDirFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                     <span class="flex-grow-1" id="sortDirFilterDisplay">
+                        {% set current_sort_dir = request_args.get('sort_dir', 'desc') %}
+                        {% if current_sort_dir == 'asc' %}Возрастанию
+                        {% else %}Убыванию
+                        {% endif %}
+                     </span>
+                  </button>
+                  <ul class="dropdown-menu" aria-labelledby="sortDirFilterDropdown">
+                     <li><a class="dropdown-item {% if current_sort_dir == 'desc' %}active{% endif %}" href="#"
+                           data-value="desc">Убыванию</a></li>
+                     <li><a class="dropdown-item {% if current_sort_dir == 'asc' %}active{% endif %}" href="#"
+                           data-value="asc">Возрастанию</a></li>
+                  </ul>
+                  <input type="hidden" name="sort_dir" id="sort_dir_hidden_input"
+                     value="{{ request_args.get('sort_dir', 'desc') }}">
+               </div>
+            </div>
+            <input type="hidden" name="page" value="{{ request_args.get('page', page) }}">
+
+         </div>
+
+      </form>
+   </div>
+</div>
+{% if error_message %}
+<div class="alert alert-danger" role="alert">
+   <i class="bi bi-exclamation-triangle-fill me-2"></i>Ошибка загрузки истории: {{ error_message }}
+</div>
+{% endif %}
+
+{% if history_data %}
+<div class="table-responsive">
+   <table class="table table-striped table-bordered table-hover align-middle caption-top bg-white shadow-sm"
+      style="width: 100%;">
+      <caption>Найдено записей: {{ total_items if total_items is defined else history_data|length }}</caption>
+      <thead class="table-light">
+         <tr class="align-middle">
+            {# Заголовки колонок #}
+         <th style="text-align: center;">Время Анализа</th>
+         <th style="text-align: center;">ФИО</th>
+         <th style="text-align: center;">Контакты</th>
+         <th style="text-align: center;">Возраст</th>
+         <th style="text-align: center;">Оценка</th>
+         <th style="text-align: center;">Статус запроса</th>
+         <th style="text-align: center;">Результат Анализа</th>
+         <th style="text-align: center;">Описание вакансии</th>
+         <th style="text-align: center;">Действия</th>
+         </tr>
+         </thead>
+      <tbody>
+         {% for item in history_data %}
+         <tr>
+            <td style="text-align: center; font-size: small;">
+               {% if item['timestamp'] %}
+               {# Форматируем timestamp в читаемый вид #}
+               {{ item['timestamp'].strftime('%d.%m.%Y %H:%M') }}
+               {% else %}
+               - {# Отображаем прочерк, если timestamp отсутствует #}
+               {% endif %}
+            </td>
+
+            <td style="text-align: center; position: relative;"> {# 2. ЯЧЕЙКА: ФИО #}
+               {# 1. Подготовка имени для отображения #}
+               {% set candidate_name_display = item['candidate_name'] or 'N/A' %}
+               {% set name_parts = candidate_name_display.split() if candidate_name_display != 'N/A' else [] %}
+
+               {# 2. Добавление ссылки на скачивание, если файл есть, оборачиваем имя #}
+               {% if item['stored_filename'] %}
+               <a href="{{ url_for('download_resume', filename=item['stored_filename']) }}"
+                  download="{{ item['original_filename'] or 'резюме' }}" class="name-download-link text-decoration-none"
+                  {# Removed stretched-link and absolute positioning styles #}
+                  title="Скачать {{ item['original_filename'] or 'резюме' }}">
+                  <div class="candidate-name-display">
+                     {% if name_parts|length >= 3 %}
+                     {{ name_parts[0] }}<br>{{ name_parts[1] }}<br>{{ name_parts[2] }}
+                     {% elif name_parts|length == 2 %}
+                     {{ name_parts[0] }}<br>{{ name_parts[1] }}
+                     {% elif name_parts|length == 1 %}
+                     {{ name_parts[0] }}
+                     {% else %}
+                     {{ candidate_name_display }} {# Отображаем 'N/A', если имя пустое #}
+                     {% endif %}
+                  </div>
+               </a>
+               {% elif item['original_filename'] %}
+               {# Если файла нет, но имя исходного файла было, значит файл недоступен #}
+               {# Отображаем имя без ссылки и пометку об отсутствии файла #}
+               <div class="candidate-name-display">
+                  {% if name_parts|length >= 3 %}
+                  {{ name_parts[0] }}<br>{{ name_parts[1] }}<br>{{ name_parts[2] }}
+                  {% elif name_parts|length == 2 %}
+                  {{ name_parts[0] }}<br>{{ name_parts[1] }}
+                  {% elif name_parts|length == 1 %}
+                  {{ name_parts[0] }}
+                  {% else %}
+                  {{ candidate_name_display }} {# Отображаем 'N/A', если имя пустое #}
+                  {% endif %}
+               </div>
+               <small class="text-muted d-block mt-1">(файл недоступен)</small>
+               {% else %}
+               {# Если нет ни stored_filename, ни original_filename, ни candidate_name - просто прочерк или N/A #}
+               <div class="candidate-name-display text-muted">-</div>
+               {% endif %}
+            </td>
+
+            {# 3. ЯЧЕЙКА: Контакты #}
+            <td class="text-break small">
+               {{ item['contacts_display'] | safe }}
+            </td>
+
+            {# 4. ЯЧЕЙКА: Возраст #}
+            <td class="text-center">
+               {{ item['age'] if item['age'] is not none else '-' }}
+            </td>
+
+            {# 5. ЯЧЕЙКА: Оценка #}
+            <td class="text-center" style="white-space: nowrap;">
+               {% if item['re_evaluation_score'] is not none %}
+               {# Если есть повторная оценка, показываем обе #}
+               <span class="score-box" title="Первичная оценка">П: {{ item['score'] if item['score'] is not none else
+                  '-'
+                  }}/10</span><br>
+               <span class="score-box" title="Повторная оценка">Р: {{ item['re_evaluation_score'] }}/10</span>
+               {% if item['re_evaluation_timestamp'] %}
+               {# Форматируем дату повторной оценки #}
+               <br><small class="text-muted" title="Дата повторной оценки">{{
+                  item['re_evaluation_timestamp'].strftime('%d.%m.%Y') }}</small>
+               {% endif %}
+               {% elif item['score'] is not none %}
+               {# Если есть только первичная оценка #}
+               <span class="score-box" title="Первичная оценка">{{ item['score'] }}/10</span>
+               {% elif item.analysis_text and item.analysis_text.startswith(("ОШИБКА", "КРИТИЧЕСКАЯ")) %}
+               {# Если была ошибка первичного анализа #}
+               <span class="badge bg-danger" title="{{ item.analysis_text }}">Ошибка</span>
+               {% else %}
+               {# Если нет ни одной оценки и нет ошибки анализа #}
+               <span class="no-score">-</span>
+               {% endif %}
+            </td>
+
+            {# 6. ЯЧЕЙКА: Статус запроса доп. инфо #}
+            <td class="text-center small">
+               {% if item['rfi_status'] == 'pending_recruiter_edit' %}
+               <span class="badge bg-warning">Редактирование</span>
+               {% elif item['rfi_status'] == 'sent' %}
+               <span class="badge bg-info">Запрошено</span>
+               {% elif item['rfi_status'] == 'completed' %}
+               <span class="badge bg-success">Получено</span>
+               {% elif item['rfi_status'] == 're_evaluating' %}
+               <span class="badge bg-primary">Переоценка...</span>
+               {% elif item['rfi_status'] == 're_evaluated' %}
+               <span class="badge bg-success" title="Повторная оценка выполнена">Переоценено</span>
+               {% elif item['rfi_status'] == 're_evaluation_failed' or item['rfi_status'] == 're_evaluation_save_failed'
+               %}
+               {# Если переоценка с ошибкой #}
+               <span class="badge bg-danger"
+                  title="{{ item.get('re_evaluation_error') or item.get('rfi_re_evaluation_error') or 'Ошибка повторной оценки' }}">Ошибка
+                  переоц.</span>
+               {% elif item['rfi_status'] == 'cancelled' %}
+               <span class="badge bg-secondary">Отменено</span>
+               {% else %}
+               <span class="text-muted">-</span>
+               {% endif %}
+            </td>
+
+            {# 7. ЯЧЕЙКА: Результат Анализа #}
+            <td class="small">
+               {% if item.analysis_text and item.analysis_text.startswith(("ОШИБКА", "КРИТИЧЕСКАЯ")) %}
+               {# Если есть ошибка первичного анализа, показываем ее #}
+               <div class="error-message text-danger">{{ item.analysis_text | escape }}</div>
+               {% else %}
+               <div class="summary-output mb-2">
+                  {# Выводим краткий итог первичного анализа, если есть #}
+                  {% if item['summary_conclusion'] %}
+                  <p><strong>Итог (первичный):</strong> {{ item['summary_conclusion'] }}</p>
+                  {% elif item['analysis_text'] %}
+                  <p><span class="text-muted">Краткий итог первичного анализа не доступен.</span></p>
+                  {% endif %}
+
+                  {# Выводим краткий итог повторного анализа (если есть) #}
+                  {% if item['re_evaluation_summary_conclusion'] %}
+                  <p><strong>Итог (повторный):</strong> {{ item['re_evaluation_summary_conclusion'] }}</p>
+                  {% elif item['re_evaluation_text'] %}
+                  <p><span class="text-muted">Краткий итог повторного анализа не доступен.</span></p>
+                  {% endif %}
+               </div>
+
+               {# Ссылка на новую страницу деталей анализа #}
+               {# Убедимся, что у анализа есть ID, прежде чем создавать ссылку #}
+               {% if item.id %}
+               <a href="{{ url_for('analysis_details', analysis_id=item['id']) }}"
+                  class="btn btn-sm btn-outline-secondary">
+                  <i class="bi bi-card-list me-1"></i> Подробнее
+               </a>
+               {% else %}
+               <span class="text-muted small">-</span> {# Нет ID для ссылки #}
+               {% endif %}
+
+               {% endif %}
+            </td>
+            {# 8. ЯЧЕЙКА: Описание вакансии #}
+            <td>
+               <div class="analysis-html-output small">
+                  {{ item['job_description'] | replace('\n', '<br>') | safe if item['job_description'] else '-' }} {#
+                  Добавлено "-", если описание пустое #}
+               </div>
+            </td>
+            {# 9. ЯЧЕЙКА: Действия #}
+            <td class="text-center">
+               {# Логика отображения кнопок в зависимости от статуса запроса #}
+               {% set candidate_has_email = item['contacts_extracted'] is not none and item['contacts_extracted'] != ''
+               %}
+               {# Упрощенная проверка email #}
+
+               {# Определяем, нужно ли показать кнопку "Запросить доп. инфо" #}
+               {# Показываем ее, если status is none ИЛИ status - один из завершающих переоценку, И email есть #}
+               {% if (item['rfi_status'] is none or item['rfi_status'] in ['re_evaluated', 're_evaluation_failed',
+               're_evaluation_save_failed']) and candidate_has_email %}
+               {# Кнопка "Запросить доп. инфо" #}
+               <a href="{{ url_for('request_additional_info', analysis_id=item['id']) }}"
+                  class="btn btn-sm btn-outline-primary mb-1" title="Запросить уточняющую информацию у кандидата">
+                  Запросить доп. инфо
+               </a>
+               {% elif item['rfi_status'] == 'pending_recruiter_edit' %} {# Если запрос на редактировании рекрутером #}
+               {# Ссылка на страницу редактирования, чтобы рекрутер мог завершить отправку #мы #}
+               <a href="{{ url_for('request_additional_info', analysis_id=item['id']) }}"
+                  class="btn btn-sm btn-outline-warning mb-1" title="Продолжить редактирование и отправить вопросы">
+                  <i class="bi bi-pencil"></i> Редакт.
+               </a>
+               {% elif item['rfi_status'] == 'sent' %} {# Если запрос отправлен, но не завершен #}
+               {# Можно добавить кнопку для отмены запроса, если нужно #}
+               <span class="badge bg-info" title="Запрос отправлен кандидату, ожидаются ответы">Запрошено</span>
+               {% elif item['rfi_status'] == 'completed' %} {# Если ответы получены - показываем кнопку "Переоценить" #}
+               {# Кнопка "Переоценить с учетом ответов" #}
+               <button class="btn btn-sm btn-success re-evaluate-btn mb-1" {# Добавлен класс re-evaluate-btn #}
+                  data-analysis-id="{{ item['id'] }}" {# Добавлен data-analysis-id #}
+                  data-candidate-name="{{ item['candidate_name'] | escape }}" {# Добавлен data-candidate-name #}
+                  title="Запустить повторную оценку с учетом ответов кандидата">
+                  Переоценить
+               </button>
+               {% elif item['rfi_status'] == 're_evaluating' %} {# Если переоценка в процессе #}
+               <span class="badge bg-primary" title="Повторная оценка в процессе выполнения">Переоценка...</span>
+               {% elif item['rfi_status'] == 'cancelled' %} {# Если добавите статус отмены #}
+               <span class="badge bg-secondary">Отменено</span>
+               {% elif not candidate_has_email %} {# Если email кандидата нет, показываем сообщение #}
+               <span class="text-muted small"
+                  title="Email кандидата не найден, невозможно запросить доп. информацию">Нет
+                  email</span>
+               {% else %} {# Любой другой статус, который не покрыт выше, или если rfi_status существует, но не попадает
+               в
+               условия показа кнопок #}
+               <span class="text-muted small">Нет действий</span>
+               {% endif %}
+
+               {# Кнопка "Удалить анализ" - видна всегда #}
+               <button class="btn btn-sm btn-outline-danger delete-analysis-btn mt-1" {# Добавлен класс
+                  delete-analysis-btn, с небольшим верхним отступом #} data-analysis-id="{{ item['id'] }}" {# Добавлен
+                  data-analysis-id #} data-candidate-name="{{ item['candidate_name'] | escape }}" {# Добавлен
+                  data-candidate-name #} data-original-filename="{{ item['original_filename'] | escape }}" {# Добавлен
+                  data-original_filename #} title="Удалить анализ">
+                  <i class="bi bi-trash"></i> Удалить
+               </button>
+            </td>
+         </tr>
+         {% endfor %}
+      </tbody>
+   </table>
+</div>
+
+{% if total_pages > 1 %}
+<nav aria-label="Навигация по истории">
+   <ul class="pagination justify-content-center mt-4">
+      <li class="page-item {{ 'disabled' if page <= 1 else '' }}">
+         {# Передаем все параметры запроса через request_args словарь #}
+         {# url_for правильно обработает ключи из словаря как query string параметры #}
+         <a class="page-link" href="{{ url_for('history', page=page-1, **request_args) if page > 1 else '#' }}"
+            aria-label="Предыдущая">
+            <span aria-hidden="true">&laquo;</span>
+         </a>
+      </li>
+
+      {# Упрощенная логика пагинации: показываем несколько страниц вокруг текущей + первую и последнюю #}
+      {% set num_pages_to_show = 2 %}
+      {% set start_page = [1, page - num_pages_to_show] | max %}
+      {% set end_page = [total_pages, page + num_pages_to_show] | min %}
+
+      {% if start_page > 1 %}
+      <li class="page-item">
+         <a class="page-link" href="{{ url_for('history', page=1, **request_args) }}">1</a>
+      </li>
+      {% if start_page > 2 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+      {% endif %}
+
+      {% for p in range(start_page, end_page + 1) %}
+      <li class="page-item {{ 'active' if p == page else '' }}">
+         <a class="page-link" href="{{ url_for('history', page=p, **request_args) }}">{{ p }}</a>
+      </li>
+      {% endfor %}
+
+      {% if end_page < total_pages %} {% if end_page < total_pages - 1 %}<li class="page-item disabled"><span
+            class="page-link">...</span></li>{% endif %}
+         <li class="page-item">
+            <a class="page-link" href="{{ url_for('history', page=total_pages, **request_args) }}">{{ total_pages }}</a>
+         </li>
+         {% endif %}
+
+
+         <li class="page-item {{ 'disabled' if page >= total_pages else '' }}">
+            {# Передаем все параметры запроса через request_args словарь #}
+            <a class="page-link"
+               href="{{ url_for('history', page=page+1, **request_args) if page < total_pages else '#' }}"
+               aria-label="Следующая">
+               <span aria-hidden="true">&raquo;</span>
+            </a>
+         </li>
+   </ul>
+   <p class="text-center text-muted small">Страница {{ page }} из {{ total_pages }}</p>
+</nav>
+{% endif %}
+
+{% elif not error_message %}
+<div class="alert alert-info text-center mt-4" role="alert">
+   <i class="bi bi-info-circle me-2"></i>Ваша история анализов пока пуста или по заданным фильтрам ничего не найдено.
+</div>
+{% endif %}
+
+<style>
+   .candidate-name-display a {
+      text-decoration: none;
+      color: var(--bs-link-color, #0d6efd);
+      cursor: pointer;
+      display: inline-block;
+   }
+
+   .candidate-name-display a:hover {
+      text-decoration: underline;
+   }
+</style>
+
+
+{#  JS для фильтров, пагинации и кнопок действий  #}
+{% block scripts %}
+{{ super() }} {# Сохраняем скрипты из базового шаблона #}
+<script>
+   document.addEventListener('DOMContentLoaded', function () {
+
+      //  JS для предотвращения закрытия dropdown при клике на интерактивные элементы внутри 
+      document.querySelectorAll('.dropdown-menu').forEach(function (dropdownMenu) {
+         // Ищем внутри dropdown-menu элементы, на которые не хотим закрывать dropdown
+         // Добавляем input, label, select и a.dropdown-item (если ссылки не отправляют форму напрямую)
+         dropdownMenu.querySelectorAll('input, label, select, a.dropdown-item').forEach(function (interactiveElement) {
+            interactiveElement.addEventListener('click', function (e) {
+               // Останавливаем распространение события клика
+               e.stopPropagation();
+            });
+            // Для select также обрабатываем изменение
+            if (interactiveElement.tagName === 'SELECT') {
+               interactiveElement.addEventListener('change', function (e) {
+                  e.stopPropagation();
+               });
+            }
+         });
+      });
+
+
+      //  JS для обновления отображаемого значения в кнопках фильтров (Пол, Статус RFI, Сортировка, Направление) 
+      document.querySelectorAll('.dropdown-menu a.dropdown-item').forEach(function (link) {
+         link.addEventListener('click', function (e) {
+            e.preventDefault(); // Предотвращаем стандартное действие ссылки (переход)
+
+            const selectedValue = this.getAttribute('data-value');
+            const selectedText = this.textContent.trim();
+
+            // Находим связанное скрытое поле ввода и span для отображения на кнопке
+            const parentDropdown = this.closest('.dropdown-menu');
+            const toggleButtonId = parentDropdown.getAttribute('aria-labelledby'); // Получаем ID кнопки-триггера
+            const toggleButton = document.getElementById(toggleButtonId); // Находим кнопку
+            const displaySpan = toggleButton ? toggleButton.querySelector('span.flex-grow-1') : null;
+
+
+            let hiddenInput = null;
+            if (toggleButtonId === 'genderFilterDropdown') {
+               hiddenInput = document.getElementById('gender_hidden_input');
+            } else if (toggleButtonId === 'rfiStatusFilterDropdown') {
+               hiddenInput = document.getElementById('rfi_status_hidden_input');
+            } else if (toggleButtonId === 'sortByFilterDropdown') {
+               hiddenInput = document.getElementById('sort_by_hidden_input');
+            } else if (toggleButtonId === 'sortDirFilterDropdown') {
+               hiddenInput = document.getElementById('sort_dir_hidden_input');
+            }
+
+            if (hiddenInput) {
+               hiddenInput.value = selectedValue;
+            }
+
+            if (displaySpan) {
+               displaySpan.textContent = selectedText;
+            }
+
+            parentDropdown.querySelectorAll('a.dropdown-item.active').forEach(item => item.classList.remove('active'));
+            this.classList.add('active');
+
+         });
+      });
+   });
+
+
+   //  JS для обновления отображаемого значения в кнопке возраста 
+   const ageFromInput = document.getElementById('age_from_dropdown');
+   const ageToInput = document.getElementById('age_to_dropdown');
+   const ageDisplay = document.getElementById('ageFilterDisplay');
+   const ageDropdownMenu = document.querySelector('#ageFilterDropdown + .dropdown-menu');
+
+   function updateAgeDisplay() {
+      const ageFrom = ageFromInput.value.trim();
+      const ageTo = ageToInput.value.trim();
+
+      if (ageFrom || ageTo) {
+         let displayText = '';
+         if (ageFrom) {
+            displayText += ageFrom;
+         } else {
+            displayText += 'От';
+         }
+         displayText += ' - ';
+         if (ageTo) {
+            displayText += ageTo;
+         } else {
+            displayText += 'До';
+         }
+         displayText += ' лет';
+         ageDisplay.textContent = displayText;
+      } else {
+         ageDisplay.textContent = 'Выберите возраст';
+      }
+   }
+
+   if (ageFromInput && ageToInput && ageDisplay) {
+      ageFromInput.addEventListener('input', updateAgeDisplay);
+      ageToInput.addEventListener('input', updateAgeDisplay);
+      if (ageDropdownMenu) {
+         ageDropdownMenu.querySelectorAll('input').forEach(input => {
+            input.addEventListener('click', function (e) {
+               e.stopPropagation();
+            });
+         });
+      }
+      updateAgeDisplay();
+   }
+
+
+   //  JS для обновления отображаемого значения в кнопке даты партии 
+   const dateFromInput = document.getElementById('date_from_dropdown');
+   const dateToInput = document.getElementById('date_to_dropdown');
+   const dateDisplay = document.getElementById('dateFilterDisplay');
+   const dateDropdownMenu = document.querySelector('#dateFilterDropdown + .dropdown-menu');
+
+
+   function updateDateDisplay() {
+      const dateFrom = dateFromInput.value.trim();
+      const dateTo = dateToInput.value.trim();
+
+      if (dateFrom || dateTo) {
+         let displayText = '';
+         if (dateFrom) {
+            try {
+               const [year, month, day] = dateFrom.split('-');
+               displayText += `${day}.${month}.${year}`;
+            } catch (e) {
+               displayText += dateFrom;
+            }
+         } else {
+            displayText += 'С';
+         }
+         displayText += ' по ';
+         if (dateTo) {
+            try {
+               const [year, month, day] = dateTo.split('-');
+               displayText += `${day}.${month}.${year}`;
+            } catch (e) {
+               displayText += dateTo;
+            }
+         } else {
+            displayText += 'По';
+         }
+         dateDisplay.textContent = displayText;
+      } else {
+         dateDisplay.textContent = 'Выберите диапазон дат';
+      }
+   }
+
+   if (dateFromInput && dateToInput && dateDisplay) {
+      dateFromInput.addEventListener('input', updateDateDisplay);
+      dateToInput.addEventListener('input', updateDateDisplay);
+      dateFromInput.addEventListener('change', updateDateDisplay);
+      dateToInput.addEventListener('change', updateDateDisplay);
+      if (dateDropdownMenu) {
+         dateDropdownMenu.querySelectorAll('input').forEach(input => {
+            input.addEventListener('click', function (e) {
+               e.stopPropagation();
+            });
+         });
+      }
+      updateDateDisplay();
+   }
+
+   const rfiStatusDisplay = document.getElementById('rfiStatusFilterDisplay');
+   const rfiStatusHiddenInput = document.getElementById('rfi_status_hidden_input');
+   if (rfiStatusDisplay && rfiStatusHiddenInput) {
+      const currentRfiStatus = rfiStatusHiddenInput.value;
+      let displayText = 'Любой статус';
+      if (currentRfiStatus === 'pending_recruiter_edit') displayText = 'Редактирование';
+      else if (currentRfiStatus === 'sent') displayText = 'Запрошено';
+      else if (currentRfiStatus === 'completed') displayText = 'Получено';
+      else if (currentRfiStatus === 're_evaluating') displayText = 'Переоценка';
+      else if (currentRfiStatus === 're_evaluated') displayText = 'Переоценено';
+      else if (currentRfiStatus === 're_evaluation_failed') displayText = 'Ошибка переоценки';
+      else if (currentRfiStatus === 're_evaluation_save_failed') displayText = 'Ошибка сохранения переоценки';
+      else if (currentRfiStatus === 'cancelled') displayText = 'Отменено';
+      else if (currentRfiStatus === '__none__') displayText = 'Нет запроса';
+      rfiStatusDisplay.textContent = displayText;
+   }
+
+
+   //  JS для кнопок "Переоценить" 
+   document.querySelectorAll('.re-evaluate-btn').forEach(button => {
+      button.addEventListener('click', function () {
+         const analysisId = this.getAttribute('data-analysis-id');
+         const candidateName = this.getAttribute('data-candidate-name');
+         if (confirm(`Вы уверены, что хотите запустить повторную оценку для кандидата ${candidateName} с учетом полученных ответов? Это может занять некоторое время.`)) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `{{ url_for('re_evaluate', analysis_id=0) }}`.replace('/0', '/' + analysisId);
+            document.body.appendChild(form);
+            form.submit();
+         }
+      });
+   });
+
+
+   //  JS для кнопок "Удалить" 
+   document.querySelectorAll('.delete-analysis-btn').forEach(button => {
+      button.addEventListener('click', function () {
+         const analysisId = this.getAttribute('data-analysis-id');
+         const candidateName = this.getAttribute('data-candidate-name');
+         const originalFilename = this.getAttribute('data-original-filename');
+         const nameToDisplay = candidateName && candidateName !== 'N/A' ? candidateName : originalFilename;
+         if (confirm(`Вы уверены, что хотите удалить анализ для кандидата ${nameToDisplay}? Это действие необратимо.`)) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `{{ url_for('delete_analysis', analysis_id=0) }}`.replace('/0', '/' + analysisId);
+            document.body.appendChild(form);
+            form.submit();
+         }
+      });
+   });
+
+</script>
+{% endblock %}
+{% endblock %}

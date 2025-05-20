@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Регистрация - Анализатор Резюме{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+   <div class="col-md-6 col-lg-5 col-xl-4">
+      <div class="card shadow-sm">
+         <div class="card-header text-center">
+            <h1 class="h3 mb-0">Регистрация нового пользователя</h1>
+         </div>
+         <div class="card-body p-4">
+            <form method="post" action="{{ url_for('register') }}">
+               <div class="mb-3">
+                  <label for="username" class="form-label">
+                     <i class="bi bi-person me-1"></i>Имя пользователя
+                  </label>
+                  <input type="text" class="form-control" id="username" name="username"
+                     value="{{ request.form.username if request.form else '' }}" required autofocus>
+               </div>
+               <div class="mb-3">
+                  <label for="password" class="form-label">
+                     <i class="bi bi-lock me-1"></i>Пароль
+                  </label>
+                  <input type="password" class="form-control" id="password" name="password" required
+                     aria-describedby="passwordHelp">
+                  <div id="passwordHelp" class="form-text">Минимум 6 символов.</div>
+               </div>
+               <div class="mb-3">
+                  <label for="confirm_password" class="form-label">
+                     <i class="bi bi-shield-lock me-1"></i>Подтвердите пароль
+                  </label>
+                  <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
+               </div>
+               <div class="d-grid">
+                  <button type="submit" class="btn btn-success btn-lg">
+                     <i class="bi bi-person-plus me-1"></i>Зарегистрироваться
+                  </button>
+               </div>
+            </form>
+            <hr class="my-4">
+            <div class="text-center">
+               Уже есть аккаунт? <a href="{{ url_for('login') }}">Войти</a>
+            </div>
+         </div>
+      </div>
+   </div>
+</div>
+{% endblock %}
