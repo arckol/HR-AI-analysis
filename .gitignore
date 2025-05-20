@@ -1,0 +1,16 @@
+# Python virtual environment
+venv/
+env/
+
+# Byte-code files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Operating System files
+.DS_Store # macOS
+Thumbs.db # Windows
+
+# Any uploaded files (if you don't want them in Git)
+uploads/

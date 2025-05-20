@@ -1,0 +1,534 @@
+{% extends 'base.html' %}
+
+{% block title %}Редактирование вопросов{% endblock %}
+
+{# Добавляем Bootstrap Icons если еще нет в base.html #}
+{% block head %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<style>
+   /* Стили для скрытия/отображения элементов */
+   /* Скрываем Edit/Remove в режиме редактирования */
+   .question-item-edit-mode .edit-question-btn,
+   .question-item-edit-mode .remove-question-btn {
+      display: none;
+   }
+
+   /* Скрываем Save/Cancel в режиме просмотра */
+   .question-item-view-mode .save-question-btn,
+   .question-item-view-mode .cancel-question-btn {
+      display: none;
+   }
+
+   /* Растягиваем textarea */
+   .question-textarea {
+      flex-grow: 1;
+      /* Занимает доступное пространство */
+      resize: vertical;
+      /* Разрешить изменение размера только по вертикали */
+      /* Добавляем базовые стили form-control */
+      display: block;
+      width: 100%;
+      /* Важно для Flexbox */
+      padding: 0.375rem 0.75rem;
+      font-size: 1rem;
+      font-weight: 400;
+      line-height: 1.5;
+      color: #212529;
+      background-color: #fff;
+      background-clip: padding-box;
+      border: 1px solid #ced4da;
+      border-radius: 0.25rem;
+      transition: border-color .15s ease-in-out, box-shadow .15s ease-in-out;
+      margin: 0;
+      margin-right: 1rem;
+      box-shadow: none;
+   }
+
+
+   /* Убираем стандартные стили списка */
+   #finalQuestionsList {
+      list-style: none;
+      padding: 0;
+   }
+
+   #finalQuestionsList>li {
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid rgba(0, 0, 0, .125);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: -1px;
+      background-color: #fff;
+   }
+
+   #finalQuestionsList>li:last-child {
+      border-bottom: none;
+   }
+
+   #finalQuestionsList>li:first-child {
+      border-top: 1px solid rgba(0, 0, 0, .125);
+   }
+
+   /* Стили для контейнера кнопок */
+   .question-actions {
+      flex-shrink: 0;
+      /* Предотвращает сжатие */
+      flex-basis: auto;
+      /* Базовый размер */
+      align-self: flex-start;
+      /* Выравнивание по верху */
+      display: flex;
+      /* Flexbox для выравнивания кнопок внутри */
+      align-items: center;
+      /* Центрирование кнопок */
+      gap: 0.5rem;
+      /* Промежуток между кнопками */
+   }
+</style>
+{% endblock %}
+
+
+{% block content %}
+<div class="container mt-4">
+   <h1 class="mb-4">Редактирование вопросов для кандидата "{{ candidate_name or 'N/A' }}"</h1>
+   <p>На основе анализа резюме (ID: {{ analysis_id }}). <a href="{{ url_for('history') }}">Вернуться к истории</a></p>
+   {# Ссылка обратно в историю #}
+   {#
+   {% with messages = get_flashed_messages(with_categories=true) %}
+   {% if messages %}
+   {% for category, message in messages %}
+   {% set alert_class = 'alert-' + (category if category in ['danger', 'warning', 'info', 'success'] else 'secondary')
+   %}
+   <div class="alert {{ alert_class }} alert-dismissible fade show" role="alert">
+      {{ message }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+   </div>
+   {% endfor %}
+   {% endif %}
+   {% endwith %}
+   #}
+
+
+   {# Контейнер для отображения всех вопросов (AI + Manual), которые будут отправлены #}
+   <div class="card shadow-sm mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+         <h2 class="h5 mb-0">Финальный список вопросов для отправки кандидату:</h2>
+         {# Кнопка для быстрого добавления пустого вопроса #}
+         <button type="button" class="btn btn-success btn-sm" id="addEmptyQuestionBtn" title="Добавить пустой вопрос"><i
+               class="bi bi-plus"></i> Добавить</button>
+      </div>
+      {# Список вопросов - будет заполняться и управляться JS #}
+      <ul class="list-group list-group-flush" id="finalQuestionsList">
+         {# AI вопросы будут добавлены сюда JavaScript'ом при загрузке страницы #}
+         {% if not ai_questions %}
+         <li class="list-group-item text-muted" id="noQuestionsMessage">Список вопросов пока пуст.</li> {# Обновленное
+         сообщение #}
+         {% endif %}
+      </ul>
+   </div>
+
+   {#  Форма для добавления ручных вопросов  #}
+   <div class="card shadow-sm mb-4">
+      <div class="card-header">
+         <h2 class="h5 mb-0">Добавить свой вопрос (через текстовое поле):</h2>
+      </div>
+      <div class="card-body">
+         <div class="mb-3">
+            <label for="manualQuestionText" class="form-label">Текст вопроса:</label>
+            <textarea class="form-control" id="manualQuestionText" rows="3"></textarea>
+         </div>
+         <button type="button" class="btn btn-secondary" id="addManualQuestionFromFieldBtn"
+            title="Добавить вопрос из поля"><i class="bi bi-plus"></i> Добавить вопрос в список</button>
+      </div>
+   </div>
+
+
+   {#  Форма для отправки финального списка вопросов кандидату  #}
+   <form id="sendQuestionsForm" method="POST" action="{{ url_for('send_final_questions', token=request_token) }}">
+      <input type="hidden" name="request_token" value="{{ request_token }}">
+
+      {# СКРЫТЫЕ ПОЛЯ ДЛЯ ФИНАЛЬНОГО СПИСКА ВОПРОСОВ - ЗАПОЛНЯЮТСЯ JavaScript перед отправкой #}
+      {# Сюда будут добавлены input type="hidden" с именем final_questions[] #}
+
+      <button type="submit" class="btn btn-success btn-lg" id="sendQuestionsBtn"><i class="bi bi-envelope"></i>
+         Отправить вопросы кандидату</button>
+   </form>
+
+
+</div>
+
+{% endblock %}
+
+{#  БЛОК СО СКРИПТАМИ  #}
+{% block scripts %}
+{{ super() }} {# Сохраняем скрипты из базового шаблона #}
+<script>
+   document.addEventListener('DOMContentLoaded', function () {
+      const finalQuestionsListUl = document.getElementById('finalQuestionsList');
+      const manualQuestionTextarea = document.getElementById('manualQuestionText');
+      const addManualQuestionFromFieldBtn = document.getElementById('addManualQuestionFromFieldBtn');
+      const addEmptyQuestionBtn = document.getElementById('addEmptyQuestionBtn');
+      const sendQuestionsForm = document.getElementById('sendQuestionsForm');
+      // Сообщение об отсутствии вопросов - ищем его в DOM при загрузке
+      let noQuestionsMessage = document.getElementById('noQuestionsMessage');
+
+      let questionsData = [];
+
+      // Функция для генерации временного уникального ID (для новых вопросов)
+      function generateTempId() {
+         // Простой уникальный ID на время сессии браузера
+         return 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+      }
+
+      const initialAiQuestions = {{ ai_questions | tojson | safe
+   }};
+   if (initialAiQuestions && initialAiQuestions.length > 0) {
+      questionsData = initialAiQuestions.map(q => ({
+         text: q.text,
+         source: 'AI',
+         id: q.id,
+         tempId: generateTempId(),
+         initialText: q.text
+      }));
+   }
+
+   // Убеждаемся, что переменная noQuestionsMessage ссылается на элемент,
+   // даже если он был удален из DOM позже.
+   const initialNoMessageInDom = document.getElementById('noQuestionsMessage');
+   if (initialNoMessageInDom && questionsData.length > 0) {
+      // Если AI вопросы были загружены, удаляем это сообщение из DOM при старте
+      initialNoMessageInDom.remove();
+   } else if (!initialNoMessageInDom && questionsData.length === 0) {
+      // Если сообщения никогда не было, но и вопросов нет, создаем его
+      const msgItem = document.createElement('li');
+      msgItem.classList.add('list-group-item', 'text-muted');
+      msgItem.textContent = "Список вопросов пока пуст.";
+      msgItem.id = 'noQuestionsMessage';
+      finalQuestionsListUl.appendChild(msgItem);
+      // Обновляем ссылку на сообщение, если оно только что создано
+      noQuestionsMessage = msgItem;
+   } else if (initialNoMessageInDom) {
+      // Если сообщение было в HTML и вопросов нет, просто убедимся, что noQuestionsMessage переменная ссылается на него
+      noQuestionsMessage = initialNoMessageInDom;
+   }
+
+   function renderQuestionItem(question, index) {
+      const listItem = document.createElement('li');
+      listItem.dataset.index = index;
+      listItem.dataset.source = question.source;
+      listItem.dataset.tempId = question.tempId; // Добавляем tempId для надежного удаления
+
+      listItem.classList.add('list-group-item', 'd-flex', 'justify-content-between', 'align-items-start');
+      if (question.text.trim() === "") {
+         listItem.classList.add('question-item-edit-mode');
+      } else {
+         listItem.classList.add('question-item-view-mode');
+      }
+
+      const questionTextarea = document.createElement('textarea');
+      questionTextarea.classList.add('form-control', 'question-textarea', 'flex-grow-1', 'me-2');
+      questionTextarea.value = question.text;
+      questionTextarea.rows = 3;
+
+      questionTextarea.addEventListener('input', autoResizeTextarea);
+      setTimeout(() => { autoResizeTextarea.call(questionTextarea); }, 0);
+
+
+      const actionsDiv = document.createElement('div');
+      actionsDiv.classList.add('question-actions'); // Используем класс actions для стилей Flexbox
+      actionsDiv.style.flexShrink = 0; // Предотвращает сжатие кнопок
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.classList.add('btn', 'btn-sm', 'btn-outline-secondary', 'me-1', 'edit-question-btn');
+      editBtn.innerHTML = '<i class="bi bi-pencil"></i> Редактировать'; // Иконка карандаша
+      editBtn.title = 'Редактировать вопрос';
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.classList.add('btn', 'btn-sm', 'btn-outline-danger', 'remove-question-btn');
+      removeBtn.innerHTML = '<i class="bi bi-x"></i> Удалить'; // Иконка крестика
+      removeBtn.title = 'Удалить вопрос';
+
+
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.classList.add('btn', 'btn-sm', 'btn-outline-success', 'me-1', 'save-question-btn');
+      saveBtn.innerHTML = '<i class="bi bi-check"></i> Сохранить'; // Иконка галочки
+      saveBtn.title = 'Сохранить изменения';
+
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.classList.add('btn', 'btn-sm', 'btn-outline-secondary', 'cancel-question-btn');
+      cancelBtn.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> Отменить'; // Иконка Отменить
+      cancelBtn.title = 'Отменить изменения';
+
+      editBtn.addEventListener('click', function () {
+         listItem.classList.remove('question-item-view-mode');
+         listItem.classList.add('question-item-edit-mode');
+         questionTextarea.focus(); // Фокус на текстовом поле
+         // Регулируем высоту textarea сразу при переходе в режим редактирования
+         autoResizeTextarea.call(questionTextarea);
+      });
+
+      removeBtn.addEventListener('click', function () {
+         // Remove from data array and re-render list
+         // Используем tempId для надежного удаления
+         const itemTempId = listItem.dataset.tempId;
+         questionsData = questionsData.filter(q => q.tempId !== itemTempId);
+         renderQuestionsList(); // Перерисовываем весь список
+         flashMessage("Вопрос удален.", "info");
+      });
+
+      saveBtn.addEventListener('click', function () {
+         // Используем tempId для надежного сохранения
+         const itemTempId = listItem.dataset.tempId;
+         const questionToUpdate = questionsData.find(q => q.tempId === itemTempId);
+
+         if (questionToUpdate) {
+            const newText = questionTextarea.value.trim();
+            questionToUpdate.text = newText; // Сохраняем текст из textarea
+            // initialText не обновляется при сохранении, это точка возврата для отмены
+
+            if (newText !== "") {
+               listItem.classList.remove('question-item-edit-mode');
+               listItem.classList.add('question-item-view-mode');
+            } else {
+               // Если текст стал пустым, удаляем вопрос
+               questionsData = questionsData.filter(q => q.tempId !== itemTempId);
+               renderQuestionsList(); // Перерисовываем весь список
+               flashMessage("Пустой вопрос удален из списка.", "info");
+            }
+         } else {
+            // Элемент не найден в данных (произошла ошибка?)
+            console.error("Ошибка: элемент для сохранения не найден в questionsData.");
+            flashMessage("Ошибка при сохранении вопроса.", "danger");
+            renderQuestionsList(); // Перерисовываем на всякий случай
+         }
+      });
+
+      cancelBtn.addEventListener('click', function () {
+         // Используем tempId для надежной отмены
+         const itemTempId = listItem.dataset.tempId;
+         const questionToRevert = questionsData.find(q => q.tempId === itemTempId);
+
+         if (questionToRevert) {
+            // Использование initialText вместо questionToRevert.text
+            const textBeforeEdit = questionToRevert.initialText !== undefined ? questionToRevert.initialText : '';
+            questionTextarea.value = textBeforeEdit;
+
+            if (textBeforeEdit.trim() === "" && questionToRevert.initialText !== undefined) { // Проверяем initialText для новых
+               questionsData = questionsData.filter(q => q.tempId !== itemTempId);
+               renderQuestionsList();
+               flashMessage("Пустой вопрос удален из списка.", "info");
+            } else if (textBeforeEdit.trim() === "" && questionToRevert.initialText === undefined) { // Это условие никогда не выполнится с правильным initialText
+               // Эта ветка на всякий случай, если initialText почему-то undefined
+               questionsData = questionsData.filter(q => q.tempId !== itemTempId);
+               renderQuestionsList();
+               flashMessage("Новый пустой вопрос удален из списка.", "info");
+            }
+            else {
+               autoResizeTextarea.call(questionTextarea);
+               flashMessage("Изменения отменены.", "info");
+            }
+            if (textBeforeEdit.trim() !== "") {
+               listItem.classList.remove('question-item-edit-mode');
+               listItem.classList.add('question-item-view-mode');
+            }
+         } else {
+            console.error("Ошибка: элемент для отмены не найден в questionsData.");
+            flashMessage("Ошибка при отмене изменений вопроса.", "danger");
+            renderQuestionsList(); // Перерисовываем на всякий случай
+         }
+      });
+
+      // Порядок добавления всех кнопок в actionsDiv
+      actionsDiv.appendChild(editBtn); // В режиме просмотра видна только эта кнопка (кроме Удалить)
+      actionsDiv.appendChild(saveBtn);   // В режиме редактирования видна эта кнопка
+      actionsDiv.appendChild(cancelBtn); // В режиме редактирования видна эта кнопка
+      actionsDiv.appendChild(removeBtn); // Всегда видна (управляется отдельным стилем .question-item-edit-mode .remove-question-btn)
+
+
+      // Добавляем текстовое поле и контейнер кнопок в li
+      // Порядок добавления: textarea, actionsDiv (кнопки справа)
+      listItem.appendChild(questionTextarea);
+      listItem.appendChild(actionsDiv);
+
+      return listItem;
+   }
+
+   function renderQuestionsList() {
+      const existingNoMessage = document.getElementById('noQuestionsMessage');
+      finalQuestionsListUl.innerHTML = ''; // Очищаем список
+
+      if (questionsData.length === 0) {
+         if (existingNoMessage) { // Если сообщение уже было создано ранее
+            finalQuestionsListUl.appendChild(existingNoMessage); // Добавляем его обратно в список
+            existingNoMessage.style.display = 'block'; // Убедимся, что оно видно
+         } else {
+            // Если сообщения никогда не было, но и вопросов нет, создаем его
+            const msgItem = document.createElement('li');
+            msgItem.classList.add('list-group-item', 'text-muted');
+            msgItem.textContent = "Список вопросов пока пуст.";
+            msgItem.id = 'noQuestionsMessage';
+            finalQuestionsListUl.appendChild(msgItem);
+            // Обновляем ссылку на сообщение, если оно только что создано
+            noQuestionsMessage = msgItem;
+         }
+         return; // Выходим, список пуст
+      } else {
+         if (existingNoMessage) {
+            existingNoMessage.remove(); // Удаляем из DOM
+         }
+      }
+
+      questionsData.forEach(function (question, index) {
+         const item = renderQuestionItem(question, index);
+         finalQuestionsListUl.appendChild(item);
+      });
+
+      finalQuestionsListUl.querySelectorAll('li').forEach(function (item, idx) {
+         item.dataset.index = idx;
+      });
+
+      finalQuestionsListUl.querySelectorAll('.question-textarea').forEach(function (textarea) {
+         autoResizeTextarea.call(textarea);
+      });
+
+
+   }
+
+   function autoResizeTextarea() {
+      // Проверяем, что элемент находится в DOM перед регулировкой высоты
+      if (!this || this.offsetParent === null) {
+         console.warn("autoResizeTextarea called with invalid 'this' context or detached element."); // Для отладки
+         return; // Элемент не виден или не в DOM, пропускаем
+      }
+      this.style.height = 'auto'; // Сброс высоты
+      // Устанавливаем высоту: либо по содержимому (scrollHeight), либо минимальную (clientHeight), если контента мало
+      this.style.height = (this.scrollHeight > this.clientHeight ? this.scrollHeight : this.clientHeight) + 'px';
+   }
+
+   // Запускаем после загрузки начальных вопросов
+   renderQuestionsList();
+
+
+   //  Обработчик кнопки "Добавить свой вопрос" (из текстового поля внизу) 
+   addManualQuestionFromFieldBtn.addEventListener('click', function () {
+      const questionText = manualQuestionTextarea.value.trim();
+      const tempId = generateTempId(); // Генерируем ID для нового вопроса
+
+      if (questionText) {
+         // Добавляем новый вопрос в data array с текстом и initialText
+         questionsData.push({ text: questionText, source: 'Manual', id: null, tempId: tempId, initialText: questionText });
+         manualQuestionTextarea.value = '';
+         renderQuestionsList();
+      } else {
+         // Если текст пустой, добавляем пустой вопрос, который сразу окажется в режиме редактирования
+         const newQuestion = { text: '', source: 'Manual', id: null, tempId: tempId, initialText: '' };
+         questionsData.push(newQuestion);
+         renderQuestionsList();
+         // Находим только что добавленный элемент и ставим фокус на textarea
+         const newItem = finalQuestionsListUl.querySelector(`li[data-temp-id="${newQuestion.tempId}"]`);
+         if (newItem) {
+            newItem.classList.remove('question-item-view-mode'); // Убедимся, что он в режиме редактирования
+            newItem.classList.add('question-item-edit-mode');
+            const textarea = newItem.querySelector('.question-textarea');
+            if (textarea) textarea.focus();
+         }
+         flashMessage("Добавлен пустой вопрос для редактирования.", "info");
+      }
+   });
+
+   //  Обработчик кнопки "Добавить" (новый пустой вопрос в заголовке) 
+   addEmptyQuestionBtn.addEventListener('click', function () {
+      const tempId = generateTempId(); // Генерируем ID для нового вопроса
+      const newQuestion = { text: '', source: 'Manual', id: null, tempId: tempId, initialText: '' };
+      questionsData.push(newQuestion);
+      renderQuestionsList();
+
+      // Мы знаем, что это последний элемент в questionsData, находим его по tempId после рендера
+      const newItem = finalQuestionsListUl.querySelector(`li[data-temp-id="${newQuestion.tempId}"]`);
+      if (newItem) {
+         newItem.classList.remove('question-item-view-mode'); // Убедимся, что он в режиме редактирования
+         newItem.classList.add('question-item-edit-mode');
+         const textarea = newItem.querySelector('.question-textarea');
+         if (textarea) {
+            textarea.focus(); // Фокус на текстовом поле
+            // Высота будет отрегулирована автоматически слушателем 'input' или при рендере
+            autoResizeTextarea.call(textarea);
+         }
+      }
+   });
+
+
+   //  Обработчик отправки формы "Отправить вопросы кандидату" 
+   sendQuestionsForm.addEventListener('submit', function (event) {
+      // Перед отправкой формы собираем текст всех вопросов из *текущих значений* textarea в DOM
+      const questionsToSend = [];
+      finalQuestionsListUl.querySelectorAll('.question-textarea').forEach(function (textarea) {
+         const questionText = textarea.value.trim();
+         if (questionText) {
+            questionsToSend.push(questionText);
+         }
+      });
+
+      // Удаляем любые старые скрытые поля с вопросами
+      sendQuestionsForm.querySelectorAll('input[name="final_questions[]"]').forEach(input => input.remove());
+
+      // Добавляем новые скрытые поля для каждого вопроса
+      questionsToSend.forEach(function (questionText) {
+         const hiddenInput = document.createElement('input');
+         hiddenInput.type = 'hidden';
+         hiddenInput.name = 'final_questions[]'; // Используем массив
+         hiddenInput.value = questionText;
+         sendQuestionsForm.appendChild(hiddenInput);
+      });
+
+      // Проверка, что список вопросов не пустой перед отправкой
+      if (questionsToSend.length === 0) {
+         flashMessage("Список вопросов для отправки пуст.", "warning"); // Используем JS функцию для flash
+         event.preventDefault(); // Отменяем отправку формы
+         return false;
+      }
+
+      console.log("Отправляется список вопросов:", questionsToSend); // Для отладки
+      // Форма будет отправлена после этого
+   });
+
+   //  JS функция для отображения flash сообщений 
+   function flashMessage(message, category = 'info') {
+      const container = document.querySelector('.container');
+      if (!container) {
+         console.log(`Flash message (${category}): ${message}`);
+         return;
+      }
+      let flashContainer = document.getElementById('flash-messages-container');
+      if (!flashContainer) {
+         flashContainer = document.createElement('div');
+         flashContainer.id = 'flash-messages-container';
+         flashContainer.classList.add('mt-3');
+         const h1 = container.querySelector('h1');
+         if (h1) {
+            h1.parentNode.insertBefore(flashContainer, h1.nextSibling);
+         } else {
+            container.insertBefore(flashContainer, container.firstElementChild);
+         }
+      }
+
+      const alertDiv = document.createElement('div');
+      alertDiv.classList.add('alert', `alert-${category}`, 'alert-dismissible', 'fade', 'show');
+      alertDiv.setAttribute('role', 'alert');
+      alertDiv.innerHTML = `
+                 ${message}
+                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+             `;
+
+      flashContainer.appendChild(alertDiv);
+   }
+
+    });
+</script>
+{% endblock %}

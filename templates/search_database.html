@@ -1,0 +1,668 @@
+{# search_database.html #}
+
+{% extends 'base.html' %}
+
+{% block title %}Поиск по Базе Резюме{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+   <h1>Поиск по Базе Резюме</h1>
+
+   {# Форма поиска с расширенными фильтрами и сортировкой #}
+   <div class="card shadow-sm mb-4">
+      <div class="card-body">
+         <h2 class="card-title h5 mb-3"><i class="bi bi-filter me-1"></i>Фильтр и сортировка</h2>
+         {# Используем GET метод для фильтрации #}
+         <form method="GET" action="{{ url_for('search_database') }}" class="row g-2 align-items-center">
+
+            {#  ПЕРВЫЙ РЯД: ПОИСК, КНОПКА РАСКРЫТИЯ, КНОПКИ ПРИМЕНИТЬ/СБРОСИТЬ  #}
+            <div class="col-md-5">
+               <label for="search_query" class="form-label visually-hidden">Поиск по всем полям:</label>
+               {# Поле для общего поиска по всем текстовым полям #}
+               <input type="text" class="form-control form-control-sm" id="search_query" name="q"
+                  value="{{ request_args.get('q', '') }}" placeholder="Поиск по всем полям..."
+                  aria-label="Поиск по всем полям">
+            </div>
+
+            <div class="col-md-auto d-flex align-items-center p-0">
+               <button class="btn btn-link btn-sm text-decoration-none" type="button" data-bs-toggle="collapse"
+                  data-bs-target="#filtersCollapse" aria-expanded="false" aria-controls="filtersCollapse">
+                  <i class="bi bi-sliders me-1"></i> Расширенный поиск / Сортировка
+               </button>
+            </div>
+
+            <div class="col-md-3 d-grid gap-1 ms-auto">
+               <button type="submit" class="btn btn-primary btn-sm">
+                  <i class="bi bi-search"></i> Применить
+               </button>
+               {# Ссылка сброса - просто на маршрут search_database без параметров #}
+               <a href="{{ url_for('search_database') }}" class="btn btn-outline-secondary btn-sm">Сбросить</a>
+            </div>
+
+
+            {#  ВТОРОЙ РЯД (СВОРАЧИВАЕМЫЙ): ВСЕ ОСТАЛЬНЫЕ ФИЛЬТРЫ И СОРТИРОВКА  #}
+            <div class="collapse row g-2 mt-2" id="filtersCollapse">
+
+               {# Фильтр по Возрасту (от и до) #}
+               <div class="col-md-3">
+                  <label class="form-label">Возраст:</label>
+                  <div class="dropdown w-100">
+                     <button
+                        class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex align-items-center"
+                        type="button" id="ageFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false"
+                        aria-controls="ageFilterDropdown">
+                        <span class="flex-grow-1" id="ageFilterDisplay">
+                           {# Используем новые имена для получения значений #}
+                           {% set current_age_from = request_args.get('candidate_age_from') %}
+                           {% set current_age_to = request_args.get('candidate_age_to') %}
+                           {% if current_age_from is not none and current_age_from != '' or current_age_to is not none
+                           and current_age_to != '' %}
+                           {% if current_age_from is not none and current_age_from != '' %}{{ current_age_from }}{% else
+                           %}От{% endif %} - {% if current_age_to is not none and current_age_to != '' %}{{
+                           current_age_to }}{% else %}До{% endif %} лет
+                           {% else %}
+                           Выберите возраст
+                           {% endif %}
+                        </span>
+                     </button>
+                     <ul class="dropdown-menu" aria-labelledby="ageFilterDropdown" style="padding: 10px;">
+                        <li>
+                           <div class="d-flex align-items-center">
+                              <label for="candidate_age_from_dropdown" class="form-label me-2 mb-0">От:</label>
+                              <input type="number" class="form-control form-control-sm w-auto"
+                                 id="candidate_age_from_dropdown" name="candidate_age_from"
+                                 value="{{ request_args.get('candidate_age_from', '') }}" min="0" style="width: 60px;">
+                           </div>
+                        </li>
+                        <li>
+                           <hr class="dropdown-divider">
+                        </li>
+                        <li>
+                           <div class="d-flex align-items-center">
+                              <label for="candidate_age_to_dropdown" class="form-label me-2 mb-0">До:</label>
+                              <input type="number" class="form-control form-control-sm w-auto"
+                                 id="candidate_age_to_dropdown" name="candidate_age_to"
+                                 value="{{ request_args.get('candidate_age_to', '') }}" min="0" style="width: 60px;">
+                           </div>
+                        </li>
+                     </ul>
+                  </div>
+               </div>
+
+               {# Фильтр по Полу (выбор) #}
+               <div class="col-md-2">
+                  <label class="form-label">Пол:</label>
+                  <div class="dropdown w-100">
+                     <button
+                        class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex align-items-center"
+                        type="button" id="genderFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false"
+                        aria-controls="genderFilterDropdown">
+                        <span class="flex-grow-1" id="genderFilterDisplay">
+                           {% set current_gender = request_args.get('candidate_gender', '') %}
+                           {% if current_gender == 'Мужской' %}Мужской
+                           {% elif current_gender == 'Женский' %}Женский
+                           {% elif current_gender == '__none__' %}Не указан
+                           {% else %}Любой
+                           {% endif %}
+                        </span>
+                     </button>
+                     <ul class="dropdown-menu" aria-labelledby="genderFilterDropdown">
+                        {# data-value остаются прежними (Мужской/Женский/__none__) #}
+                        <li><a class="dropdown-item {% if current_gender == '' %}active{% endif %}" href="#"
+                              data-value="">Любой</a></li>
+                        <li><a class="dropdown-item {% if current_gender == 'Мужской' %}active{% endif %}" href="#"
+                              data-value="Мужской">Мужской</a></li>
+                        <li><a class="dropdown-item {% if current_gender == 'Женский' %}active{% endif %}" href="#"
+                              data-value="Женский">Женский</a></li>
+                        <li><a class="dropdown-item {% if current_gender == '__none__' %}active{% endif %}" href="#"
+                              data-value="__none__">Не указан</a></li>
+                     </ul>
+                     <input type="hidden" name="candidate_gender" id="candidate_gender_hidden_input"
+                        value="{{ request_args.get('candidate_gender', '') }}">
+                  </div>
+               </div>
+
+               {# Фильтр по Желаемой Должности #}
+               <div class="col-md-3">
+                  <label for="candidate_position_filter" class="form-label">Желаемая должность:</label>
+                  <input type="text" class="form-control form-control-sm" id="candidate_position_filter"
+                     name="candidate_position" value="{{ request_args.get('candidate_position', '') }}"
+                     placeholder="Начните вводить...">
+               </div>
+
+               {# Фильтр по Городу #}
+               <div class="col-md-3">
+                  <label for="candidate_city_filter" class="form-label">Город:</label>
+                  <input type="text" class="form-control form-control-sm" id="candidate_city_filter"
+                     name="candidate_city" value="{{ request_args.get('candidate_city', '') }}"
+                     placeholder="Начните вводить...">
+               </div>
+
+               {# Фильтр по Ключевым Навыкам #}
+               <div class="col-md-4">
+                  <label for="candidate_skills_filter" class="form-label">Ключевые навыки:</label>
+                  <input type="text" class="form-control form-control-sm" id="candidate_skills_filter"
+                     name="candidate_skills" value="{{ request_args.get('candidate_skills', '') }}"
+                     placeholder="Начните вводить...">
+               </div>
+
+               {# Фильтр по Зарплатным Ожиданиям (от и до) #}
+               <div class="col-md-3">
+                  <label class="form-label">Зарплатные ожидания:</label>
+                  <div class="d-flex align-items-center">
+                     <label for="candidate_salary_expectation_from_filter" class="form-label me-2 mb-0">От:</label>
+                     <input type="number" class="form-control form-control-sm me-2"
+                        id="candidate_salary_expectation_from_filter" name="candidate_salary_expectation_from"
+                        value="{{ request_args.get('candidate_salary_expectation_from', '') }}" min="0"
+                        style="width: 80px;">
+                     <label for="candidate_salary_expectation_to_filter" class="form-label me-2 mb-0">До:</label>
+                     <input type="number" class="form-control form-control-sm"
+                        id="candidate_salary_expectation_to_filter" name="candidate_salary_expectation_to"
+                        value="{{ request_args.get('candidate_salary_expectation_to', '') }}" min="0"
+                        style="width: 80px;">
+                  </div>
+               </div>
+
+               {# Фильтр по Формату Работы #}
+               <div class="col-md-3">
+                  <label class="form-label">Формат работы:</label>
+                  <div class="dropdown w-100">
+                     <button
+                        class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex align-items-center"
+                        type="button" id="workFormatFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false"
+                        aria-controls="workFormatFilterDropdown">
+                        <span class="flex-grow-1" id="workFormatFilterDisplay">
+                           {# Используем новое имя для получения значения #}
+                           {% set current_work_format = request_args.get('candidate_work_format', '') %}
+                           {% if current_work_format == 'Полный день' %}Полный день
+                           {% elif current_work_format == 'Удаленная работа' %}Удаленная работа
+                           {% elif current_work_format == 'Гибкий график' %}Гибкий график
+                           {% elif current_work_format == '__none__' %}Не указан
+                           {% else %}Любой
+                           {% endif %}
+                        </span>
+                     </button>
+                     <ul class="dropdown-menu" aria-labelledby="workFormatFilterDropdown">
+                        <li><a class="dropdown-item {% if current_work_format == '' %}active{% endif %}" href="#"
+                              data-value="">Любой</a></li>
+                        <li><a class="dropdown-item {% if current_work_format == 'Полный день' %}active{% endif %}"
+                              href="#" data-value="Полный день">Полный день</a></li>
+                        <li><a class="dropdown-item {% if current_work_format == 'Удаленная работа' %}active{% endif %}"
+                              href="#" data-value="Удаленная работа">Удаленная работа</a></li>
+                        <li><a class="dropdown-item {% if current_work_format == 'Гибкий график' %}active{% endif %}"
+                              href="#" data-value="Гибкий график">Гибкий график</a></li>
+                        <li><a class="dropdown-item {% if current_work_format == '__none__' %}active{% endif %}"
+                              href="#" data-value="__none__">Не указан</a></li>
+                     </ul>
+                     <input type="hidden" name="candidate_work_format" id="candidate_work_format_hidden_input"
+                        value="{{ request_args.get('candidate_work_format', '') }}">
+                  </div>
+               </div>
+
+               <div class="col-md-3">
+                  <label class="form-label">Сортировать по:</label>
+                  <div class="dropdown w-100">
+                     <button
+                        class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex align-items-center"
+                        type="button" id="sortByFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false"
+                        aria-controls="sortByFilterDropdown">
+                        <span class="flex-grow-1" id="sortByFilterDisplay">
+                           {# Обновляем словарь отображения и получаем значение по новому имени #}
+                           {% set sort_by_display = {
+                           'candidate_fio': 'ФИО',
+                           'candidate_age': 'Возрасту',
+                           'candidate_gender': 'Полу',
+                           'candidate_position': 'Желаемой должности',
+                           'candidate_skills': 'Ключевым навыкам',
+                           'candidate_experience_summary': 'Опыту',
+                           'candidate_work_history': 'Местам работы',
+                           'candidate_education': 'Образованию',
+                           'candidate_city': 'Городу',
+                           'candidate_contact_email': 'Email',
+                           'candidate_contact_phone': 'Телефону',
+                           'candidate_salary_expectation': 'Зарплатным ожиданиям',
+                           'candidate_relocation_travel': 'Релокации/Командировкам',
+                           'candidate_work_format': 'Формату работы',
+                           'candidate_languages': 'Языкам',
+                           'imported_at': 'Дате импорта'
+                           } %}
+                           {% set current_sort_by = request_args.get('sort_by', 'candidate_fio') %}
+                           {{ sort_by_display.get(current_sort_by, 'ФИО') }}
+                        </span>
+                     </button>
+                     <ul class="dropdown-menu" aria-labelledby="sortByFilterDropdown">
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_fio' %}active{% endif %}"
+                              href="#" data-value="candidate_fio">ФИО</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_age' %}active{% endif %}"
+                              href="#" data-value="candidate_age">Возрасту</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_gender' %}active{% endif %}"
+                              href="#" data-value="candidate_gender">Полу</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_position' %}active{% endif %}"
+                              href="#" data-value="candidate_position">Желаемой должности</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_skills' %}active{% endif %}"
+                              href="#" data-value="candidate_skills">Ключевым навыкам</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_experience_summary' %}active{% endif %}"
+                              href="#" data-value="candidate_experience_summary">Опыту</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_work_history' %}active{% endif %}"
+                              href="#" data-value="candidate_work_history">Местам работы</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_education' %}active{% endif %}"
+                              href="#" data-value="candidate_education">Образованию</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_city' %}active{% endif %}"
+                              href="#" data-value="candidate_city">Городу</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_contact_email' %}active{% endif %}"
+                              href="#" data-value="candidate_contact_email">Email</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_contact_phone' %}active{% endif %}"
+                              href="#" data-value="candidate_contact_phone">Телефону</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_salary_expectation' %}active{% endif %}"
+                              href="#" data-value="candidate_salary_expectation">Зарплатным ожиданиям</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_relocation_travel' %}active{% endif %}"
+                              href="#" data-value="candidate_relocation_travel">Релокации/Командировкам</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_work_format' %}active{% endif %}"
+                              href="#" data-value="candidate_work_format">Формату работы</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'candidate_languages' %}active{% endif %}"
+                              href="#" data-value="candidate_languages">Языкам</a></li>
+                        <li><a class="dropdown-item {% if current_sort_by == 'imported_at' %}active{% endif %}" href="#"
+                              data-value="imported_at">Дате импорта</a></li>
+                     </ul>
+                     <input type="hidden" name="sort_by" id="sort_by_hidden_input"
+                        value="{{ request_args.get('sort_by', 'candidate_fio') }}">
+                  </div>
+               </div>
+
+               {# Направление сортировки #}
+               <div class="col-md-2">
+                  <label class="form-label">Направление:</label>
+                  <div class="dropdown w-100">
+                     <button
+                        class="btn btn-outline-secondary dropdown-toggle w-100 text-start d-flex align-items-center"
+                        type="button" id="sortDirFilterDropdown" data-bs-toggle="dropdown" aria-expanded="false"
+                        aria-controls="sortDirFilterDropdown">
+                        <span class="flex-grow-1" id="sortDirFilterDisplay">
+                           {% set current_sort_dir = request_args.get('sort_dir', 'asc') %} {# Для базы резюме ASC по
+                           умолчанию #}
+                           {% if current_sort_dir == 'desc' %}Убыванию
+                           {% else %}Возрастанию
+                           {% endif %}
+                        </span>
+                     </button>
+                     <ul class="dropdown-menu" aria-labelledby="sortDirFilterDropdown">
+                        <li><a class="dropdown-item {% if current_sort_dir == 'asc' %}active{% endif %}" href="#"
+                              data-value="asc">Возрастанию</a></li>
+                        <li><a class="dropdown-item {% if current_sort_dir == 'desc' %}active{% endif %}" href="#"
+                              data-value="desc">Убыванию</a></li>
+                     </ul>
+                     <input type="hidden" name="sort_dir" id="sort_dir_hidden_input"
+                        value="{{ request_args.get('sort_dir', 'asc') }}">
+                  </div>
+               </div>
+
+               <input type="hidden" name="page" id="current_page_input" value="{{ request_args.get('page', page) }}">
+
+
+            </div>
+
+         </form>
+
+         {#  ПОЛЕ ДЛЯ ОПИСАНИЯ ВАКАНСИИ (НЕ ВНУТРИ ФОРМЫ ФИЛЬТРОВ)  #}
+         <div class="row g-2 mt-3">
+            <div class="col-12">
+               <label for="job_description_for_analysis" class="form-label">Описание вакансии для AI-анализа:</label>
+               <textarea class="form-control" id="job_description_for_analysis" name="job_description_for_analysis"
+                  rows="4"
+                  placeholder="Вставьте сюда описание вакансии, по которой нужно оценить кандидата..."></textarea>
+               <small class="form-text text-muted">Это описание будет использовано при запуске AI-анализа для каждого
+                  кандидата.</small>
+            </div>
+         </div>
+
+      </div>
+   </div>
+
+   {# Отображение результатов поиска #}
+   {# Показываем результаты только если поиск был выполнен #}
+   {% if search_performed %}
+   <h2>Результаты поиска{% if request_args.get('q') %}: "{{ request_args.get('q') }}"{% endif %}</h2> {# Отображаем
+   общий поисковый запрос, если он есть #}
+
+   {% if search_results %}
+   <div class="table-responsive">
+      {# Используем таблицу для отображения данных из imported_resumes #}
+      <table class="table table-striped table-bordered table-hover align-middle caption-top bg-white shadow-sm">
+         {# Обновляем подпись с общим количеством найденных записей #}
+         <caption>Найдено записей: {{ total_items }}</caption>
+         <thead>
+            <tr>
+               {# Заголовки таблицы #}
+               <th style="width: 10%;">ФИО</th>
+               <th style="width: 4%;">Возраст</th>
+               <th style="width: 4%;">Пол</th>
+               <th style="width: 9%;">Должность</th>
+               <th style="width: 12%;">Навыки</th>
+               <th style="width: 8%;">Опыт</th>
+               <th style="width: 8%;">История работы</th>
+               <th style="width: 8%;">Образование</th>
+               <th style="width: 6%;">Контакты</th>
+               <th style="width: 5%;">Город</th>
+               <th style="width: 6%;">Зарплата</th>
+               <th style="width: 6%;">Релокация</th>
+               <th style="width: 6%;">Формат</th>
+               <th style="width: 5%;">Языки</th>
+               <th style="width: 5%;">Импорт</th>
+               <th style="width: 5%;">Действия</th>
+            </tr>
+         </thead>
+         <tbody>
+            {% for resume in search_results %}
+            <tr>
+               {# Используем НАЗВАНИЯ КОЛОНОК БД с доступом по КЛЮЧУ #}
+               {# Используем resume.get('key', default_value) для безопасного доступа к словарю #}
+               <td>{{ resume.get('fio', '-') }}</td>
+               <td>{{ resume.get('vozrast', '-') if resume.get('vozrast') is not none else '-' }}</td>
+               <td>{{ resume.get('pol', '-') }}</td>
+               <td class="small text-break">{{ resume.get('zhelaemaya_dolzhnost', '-') }}</td>
+               <td class="small text-break">{{ resume.get('klyuchevye_navyki', '-') }}</td>
+               <td class="small text-break">{{ resume.get('opyt_raboty', '-') }}</td>
+               <td class="small text-break">{{ resume.get('mesta_raboty', '-') }}</td>
+               <td class="small text-break">{{ resume.get('obrazovanie', '-') }}</td>
+               <td class="small text-break">
+                  {# Объединяем телефон и email, используя .get() для безопасности #}
+                  {% set phone = resume.get('telefon') %}
+                  {% set email = resume.get('email') %}
+                  {{ phone or '' }}{% if phone and email %}<br>{% endif %}{{ email or '' }}
+                  {% if not phone and not email %}-{% endif %}
+               </td>
+               <td>{{ resume.get('gorod', '-') }}</td>
+               <td>{{ resume.get('zarplatnye_ozhidaniya', '-') }}</td>
+               <td>{{ resume.get('relokatsiya_komandirovki', '-') }}</td>
+               <td>{{ resume.get('format_raboty', '-') }}</td>
+               <td>{{ resume.get('yazyki', '-') }}</td>
+
+               {# Строка с датой импорта #}
+               {# Используем доступ по ключу и безопасный фильтр для даты импорта #}
+               <td>{{ resume.get('imported_at') | format_datetime_safe('%d.%m.%Y') }}</td>
+
+               {# Ячейка для действий (кнопка "Анализировать AI") #}
+               <td>
+                  {# Кнопка Анализировать AI #}
+                  <button class="btn btn-sm btn-success analyze-imported-btn" data-resume-id="{{ resume.get('id') }}"
+                     data-candidate-name="{{ resume.get('fio', '') | escape }}"
+                     title="Запустить анализ этого резюме с помощью AI">
+                     <i class="bi bi-robot"></i> Анализировать AI
+                  </button>
+               </td>
+            </tr>
+            {% endfor %}
+         </tbody>
+      </table>
+   </div>
+
+   {# Пагинация #}
+   {% if total_pages > 1 %}
+   {% set url_params_base = request_args.copy() %}
+   {% set _ = url_params_base.pop('page', None) %}
+
+   <nav aria-label="Page navigation">
+      <ul class="pagination justify-content-center">
+         <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('search_database', page=page-1, **url_params_base) }}"
+               aria-label="Предыдущая">
+               <span aria-hidden="true">&laquo;</span>
+            </a>
+         </li>
+
+         {# Страницы #}
+         {% set num_pages_to_show = 2 %}
+         {% set start_page = [1, page - num_pages_to_show] | max %}
+         {% set end_page = [total_pages, page + num_pages_to_show] | min %}
+
+         {% if start_page > 1 %}
+         <li class="page-item">
+            {# Use url_params_base here #}
+            <a class="page-link" href="{{ url_for('search_database', page=1, **url_params_base) }}">1</a>
+         </li>
+         {% if start_page > 2 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+         {% endif %}
+
+         {% for p in range(start_page, end_page + 1) %}
+         <li class="page-item {% if p == page %}active{% endif %}">
+            <a class="page-link" href="{{ url_for('search_database', page=p, **url_params_base) }}">{{ p }}</a>
+         </li>
+         {% endfor %}
+
+         {% if end_page < total_pages %} {% if end_page < total_pages - 1 %}<li class="page-item disabled"><span
+               class="page-link">...</span></li>{% endif %}
+            <li class="page-item">
+               <a class="page-link" href="{{ url_for('search_database', page=total_pages, **url_params_base) }}">{{
+                  total_pages }}</a>
+            </li>
+            {% endif %}
+
+            {# Следующая страница #}
+            <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+               <a class="page-link" href="{{ url_for('search_database', page=page+1, **url_params_base) }}"
+                  aria-label="Следующая">
+                  <span aria-hidden="true">&raquo;</span>
+               </a>
+            </li>
+      </ul>
+      <p class="text-center text-muted small">Страница {{ page }} из {{ total_pages }}</p>
+   </nav>
+   {% endif %}
+
+
+   {% else %}
+   {# Сообщение, если ничего не найдено #}
+   <div class="alert alert-info" role="alert">
+      По вашему запросу и выбранным фильтрам ничего не найдено в базе резюме.
+   </div>
+   {% endif %}
+
+   {% else %} {# Если поиск еще не выполнялся #}
+   <div class="alert alert-secondary text-center" role="alert">
+      Введите поисковый запрос или используйте фильтры выше, чтобы найти резюме в базе данных.
+   </div>
+   {% endif %}
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }} {# Сохраняем скрипты из базового шаблона #}
+<script>
+   document.addEventListener('DOMContentLoaded', function () {
+
+      //  JS для предотвращения закрытия dropdown при клике на интерактивные элементы внутри 
+      document.querySelectorAll('.dropdown-menu').forEach(function (dropdownMenu) {
+         dropdownMenu.querySelectorAll('input, label, select').forEach(function (interactiveElement) {
+            interactiveElement.addEventListener('click', function (e) {
+               e.stopPropagation();
+            });
+            if (interactiveElement.tagName === 'SELECT') {
+               interactiveElement.addEventListener('change', function (e) {
+                  e.stopPropagation();
+               });
+            }
+         });
+
+         // Обработка кликов по ссылкам внутри dropdown-menu
+         document.querySelectorAll('.dropdown-menu a.dropdown-item').forEach(function (link) {
+            link.addEventListener('click', function (e) {
+               e.preventDefault();
+               e.stopPropagation();
+
+               const selectedValue = this.getAttribute('data-value');
+               const selectedText = this.textContent.trim();
+
+               const parentDropdown = this.closest('.dropdown-menu');
+               const toggleButtonId = parentDropdown.getAttribute('aria-labelledby');
+               const toggleButton = document.getElementById(toggleButtonId);
+               const displaySpan = toggleButton ? toggleButton.querySelector('span.flex-grow-1') : null;
+
+
+               let hiddenInput = null;
+               // Проверяем ID кнопок и ищем нужные скрытые поля по новым ID
+               if (toggleButtonId === 'genderFilterDropdown') {
+                  hiddenInput = document.getElementById('candidate_gender_hidden_input'); // Новый ID
+               } else if (toggleButtonId === 'sortByFilterDropdown') {
+                  hiddenInput = document.getElementById('sort_by_hidden_input'); // ID остался тем же, но значение будет новым
+               } else if (toggleButtonId === 'sortDirFilterDropdown') {
+                  hiddenInput = document.getElementById('sort_dir_hidden_input'); // ID остался тем же
+               } else if (toggleButtonId === 'workFormatFilterDropdown') { // Используем новый ID кнопки
+                  hiddenInput = document.getElementById('candidate_work_format_hidden_input'); // Новый ID
+               }
+
+               if (hiddenInput) {
+                  hiddenInput.value = selectedValue;
+               }
+
+               if (displaySpan) {
+                  displaySpan.textContent = selectedText;
+               }
+
+               parentDropdown.querySelectorAll('a.dropdown-item.active').forEach(item => item.classList.remove('active'));
+               this.classList.add('active');
+            });
+         });
+      });
+
+
+      //  JS для обновления отображаемого значения в кнопке возраста 
+      // Используем новые ID полей ввода
+      const ageFromInput = document.getElementById('candidate_age_from_dropdown');
+      const ageToInput = document.getElementById('candidate_age_to_dropdown');
+      const ageDisplay = document.getElementById('ageFilterDisplay');
+
+      function updateAgeDisplay() {
+         if (!ageFromInput || !ageToInput || !ageDisplay) return; // Добавлена проверка на null
+         const ageFrom = ageFromInput.value.trim();
+         const ageTo = ageToInput.value.trim();
+
+         if (ageFrom || ageTo) {
+            let displayText = '';
+            if (ageFrom) {
+               displayText += ageFrom;
+            } else {
+               displayText += 'От';
+            }
+            displayText += ' - ';
+            if (ageTo) {
+               displayText += ageTo;
+            } else {
+               displayText += 'До';
+            }
+            displayText += ' лет';
+            ageDisplay.textContent = displayText;
+         } else {
+            ageDisplay.textContent = 'Выберите возраст';
+         }
+      }
+
+      if (ageFromInput && ageToInput && ageDisplay) {
+         ageFromInput.addEventListener('input', updateAgeDisplay);
+         ageToInput.addEventListener('input', updateAgeDisplay);
+         updateAgeDisplay(); // Обновляем при загрузке страницы
+      }
+
+
+      //  JS для кнопки "Анализировать AI" 
+      const analyzeButtons = document.querySelectorAll('.analyze-imported-btn');
+      const jobDescriptionTextarea = document.getElementById('job_description_for_analysis');
+
+
+      analyzeButtons.forEach(button => {
+         button.addEventListener('click', function () {
+            const resumeId = this.dataset.resumeId;
+            const candidateName = this.dataset.candidateName || 'кандидата';
+            const jobDescription = jobDescriptionTextarea ? jobDescriptionTextarea.value.trim() : '';
+
+            if (!jobDescription) {
+               alert("Пожалуйста, введите описание вакансии для анализа.");
+               if (jobDescriptionTextarea) {
+                  jobDescriptionTextarea.focus();
+               }
+               return;
+            }
+
+            if (confirm(`Вы уверены, что хотите запустить AI-анализ для ${candidateName} (ID: ${resumeId}) по указанной вакансии?`)) {
+
+               const originalButtonText = this.innerHTML;
+               this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Анализ...';
+               this.disabled = true;
+
+               fetch(`{{ url_for('analyze_imported_candidate', resume_id=0) }}`.replace('/0', '/' + resumeId), {
+                  method: 'POST',
+                  headers: {
+                     'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ job_description: jobDescription })
+               })
+                  .then(response => {
+                     if (!response.ok) {
+                        return response.text().then(text => { throw new Error(`Ошибка HTTP ${response.status}: ${text}`) });
+                     }
+                     return response.json();
+                  })
+                  .then(data => {
+                     console.log('Ответ сервера на запрос анализа:', data);
+                     if (data.status === 'success') {
+                        // Используем Bootstrap Alert вместо стандартного alert
+                        const alertPlaceholder = document.createElement('div');
+                        alertPlaceholder.innerHTML = [
+                           '<div class="alert alert-success alert-dismissible fade show" role="alert">',
+                           `   <i class="bi bi-check-circle-fill me-2"></i>Задача анализа для кандидата '<strong>${candidateName}</strong>' поставлена в очередь.`,
+                           '   <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>',
+                           '</div>'
+                        ].join('');
+                        // Вставляем alert перед формой поиска
+                        const searchFormContainer = document.querySelector('.card.shadow-sm.mb-4');
+                        if (searchFormContainer) {
+                           searchFormContainer.parentNode.insertBefore(alertPlaceholder, searchFormContainer);
+                        } else {
+                           alert(`Задача анализа для кандидата '${candidateName}' поставлена в очередь. ${data.message}`);
+                        }
+                     } else {
+                        // Используем Bootstrap Alert для ошибок
+                        const errorAlertPlaceholder = document.createElement('div');
+                        errorAlertPlaceholder.innerHTML = [
+                           '<div class="alert alert-danger alert-dismissible fade show" role="alert">',
+                           `   <i class="bi bi-exclamation-triangle-fill me-2"></i>Ошибка сервера: ${data.message}`,
+                           '   <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>',
+                           '</div>'
+                        ].join('');
+                        const searchFormContainer = document.querySelector('.card.shadow-sm.mb-4');
+                        if (searchFormContainer) {
+                           searchFormContainer.parentNode.insertBefore(errorAlertPlaceholder, searchFormContainer);
+                        } else {
+                           alert(`Ошибка сервера: ${data.message}`);
+                        }
+                     }
+                  })
+                  .catch(error => {
+                     console.error('Ошибка при вызове маршрута анализа:', error);
+                     // Используем Bootstrap Alert для критических ошибок
+                     const criticalErrorAlertPlaceholder = document.createElement('div');
+                     criticalErrorAlertPlaceholder.innerHTML = [
+                        '<div class="alert alert-danger alert-dismissible fade show" role="alert">',
+                        `   <i class="bi bi-exclamation-triangle-fill me-2"></i>Произошла ошибка при запуске анализа: ${error.message}`,
+                        '   <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>',
+                        '</div>'
+                     ].join('');
+                     const searchFormContainer = document.querySelector('.card.shadow-sm.mb-4');
+                     if (searchFormContainer) {
+                        searchFormContainer.parentNode.insertBefore(criticalErrorAlertPlaceholder, searchFormContainer);
+                     } else {
+                        alert('Произошла ошибка при запуске анализа: ' + error.message);
+                     }
+                  })
+                  .finally(() => {
+                     this.innerHTML = originalButtonText;
+                     this.disabled = false;
+                  });
+            }
+         });
+      });
+
+   });
+</script>
+{% endblock %}
